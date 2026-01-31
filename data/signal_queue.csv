@@ -1,2 +1,0 @@
-signal_id,created_ts,symbol,direction,setup_name,entry_reason,invalidation_reason,stop_loss_logic,take_profit_logic,market_context,emotional_state,order_type,limit_price,qty,status,decision_ts,decision_reason
-bd347946-5c45-498d-8d53-c223a6fec878,2026-01-30T13:03:48.861528+00:00,SPY,long,MeanReversion_D1,Using completed daily bars due to 15-min delayed data; yesterday close < prior day low,Closes below yesterday low,Below yesterday low (684.85),2R target,range,calm,market,,1,ignored,2026-01-31T11:01:09.929324+00:00,60-day backtest negative expectancy

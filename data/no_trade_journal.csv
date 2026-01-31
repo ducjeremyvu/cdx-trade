@@ -1,9 +1,0 @@
-log_id,symbol,timestamp,reason,market_context,emotional_state,notes
-6df8b566-379d-4c97-87d0-7478f7d4db69,SPY,2026-01-29T16:30:51.899249+00:00,No valid setup,unclear,calm,
-7cc7e223-0dc6-42fa-939f-6bb5d1ea51a9,SPY,2026-01-29T21:20:00.509234+00:00,No valid setup,unclear,calm,
-9b74a133-a2c1-4e1f-af18-3aefdae0ed29,SPY,2026-01-30T21:20:00.520725+00:00,No valid setup,unclear,calm,
-a3ac635b-e295-4981-ba91-dda104239029,SPY,2026-01-31T11:06:53.493109+00:00,No valid setup,unclear,calm,
-98ab328b-eb45-42e1-b995-95d65481884f,QQQ,2026-01-31T11:06:53.641005+00:00,No valid setup,unclear,calm,
-8493dbc7-12dc-4686-be7c-0a7b40365fbc,SPY,2026-01-31T15:08:40.521650+00:00,No valid setup,unclear,calm,
-131a8dd9-960a-4273-a6e0-85676b3ae901,QQQ,2026-01-31T15:08:40.663038+00:00,No valid setup,unclear,calm,
-0804bb88-0d52-4679-8b04-4f3b425352c8,IWM,2026-01-31T15:08:40.785654+00:00,No valid setup,unclear,calm,
