@@ -22,6 +22,7 @@ class AppConfig:
     backtest_gate_min_avg_r: float
     backtest_gate_min_win_rate: float
     max_open_positions: int
+    watch_only_symbols: list[str]
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -79,6 +80,12 @@ class AppConfig:
             os.getenv("BACKTEST_GATE_MIN_WIN_RATE", "0.45")
         )
         max_open_positions = int(os.getenv("MAX_OPEN_POSITIONS", "1"))
+        watch_only_symbols_raw = os.getenv("WATCH_ONLY_SYMBOLS", "").strip()
+        watch_only_symbols = [
+            value.strip().upper()
+            for value in watch_only_symbols_raw.split(",")
+            if value.strip()
+        ]
 
         return cls(
             api_key=api_key,
@@ -97,4 +104,5 @@ class AppConfig:
             backtest_gate_min_avg_r=backtest_gate_min_avg_r,
             backtest_gate_min_win_rate=backtest_gate_min_win_rate,
             max_open_positions=max_open_positions,
+            watch_only_symbols=watch_only_symbols,
         )

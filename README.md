@@ -11,6 +11,7 @@ Quick start
 - Optional: `SETUPS_BY_SYMBOL=QQQ=MeanReversion_D1;IWM=PrevDayBreakout_D1`
 - Optional (approval gate): `BACKTEST_GATE_DAYS=60`, `BACKTEST_GATE_MIN_TRADES=10`, `BACKTEST_GATE_MIN_AVG_R=0`, `BACKTEST_GATE_MIN_WIN_RATE=0.45`
 - Optional: `MAX_OPEN_POSITIONS=1`
+- Optional: `WATCH_ONLY_SYMBOLS=SPY`
 - Paper data note: Alpaca paper data is 15-min delayed, so V0 uses completed daily bars.
 
 Run

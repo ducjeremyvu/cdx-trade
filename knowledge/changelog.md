@@ -21,3 +21,4 @@ Changelog
 - Added options learning notes (no options execution in V0).
 - Added max open positions guard for small accounts.
 - Added daily markdown report command.
+- Added watch-only symbols (SPY) for signal logging only.

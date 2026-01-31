@@ -22,6 +22,7 @@ Exit rules
 Universe and data
 - Symbols: QQQ, IWM (SPY on hold due to weak backtests).
 - Data: daily bars only (paper data is 15-minute delayed).
+- Watch-only: SPY (signals logged as no-trade).
 
 Review discipline
 - Every closed trade must be reviewed the same or next day.

@@ -127,6 +127,17 @@ def evaluate_and_trade(
     no_trade_emotion: str,
     no_trade_notes: str,
 ) -> str | None:
+    if symbol.upper() in config.watch_only_symbols:
+        log_id = log_no_trade(
+            config.no_trade_journal_path,
+            symbol=symbol,
+            reason="Watch-only symbol",
+            market_context=no_trade_context,
+            emotional_state=no_trade_emotion,
+            notes="Symbol is configured as watch-only",
+        )
+        print(f"Watch-only symbol. Logged no-trade: log_id={log_id}")
+        return None
     if count_open_trades(config.journal_path) >= config.max_open_positions:
         log_id = log_no_trade(
             config.no_trade_journal_path,
@@ -197,6 +208,17 @@ def evaluate_and_queue(
     no_trade_emotion: str,
     no_trade_notes: str,
 ) -> str | None:
+    if symbol.upper() in config.watch_only_symbols:
+        log_id = log_no_trade(
+            config.no_trade_journal_path,
+            symbol=symbol,
+            reason="Watch-only symbol",
+            market_context=no_trade_context,
+            emotional_state=no_trade_emotion,
+            notes="Symbol is configured as watch-only",
+        )
+        print(f"Watch-only symbol. Logged no-trade: log_id={log_id}")
+        return None
     if count_open_trades(config.journal_path) >= config.max_open_positions:
         log_id = log_no_trade(
             config.no_trade_journal_path,
