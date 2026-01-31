@@ -19,3 +19,4 @@ Changelog
 2026-02-01
 - Added per-symbol setup allowlist and backtest approval gate.
 - Added options learning notes (no options execution in V0).
+- Added max open positions guard for small accounts.

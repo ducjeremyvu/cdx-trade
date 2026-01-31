@@ -27,6 +27,7 @@ from journal import (
     list_signal_queue,
     update_signal_status,
     read_rows,
+    count_open_trades,
 )
 from trade_logic import find_trade_idea
 from review import (
@@ -125,6 +126,17 @@ def evaluate_and_trade(
     no_trade_emotion: str,
     no_trade_notes: str,
 ) -> str | None:
+    if count_open_trades(config.journal_path) >= config.max_open_positions:
+        log_id = log_no_trade(
+            config.no_trade_journal_path,
+            symbol=symbol,
+            reason="Max open positions reached",
+            market_context=no_trade_context,
+            emotional_state=no_trade_emotion,
+            notes=f"max_open_positions={config.max_open_positions}",
+        )
+        print(f"Max open positions reached. Logged no-trade: log_id={log_id}")
+        return None
     allowed_setups = _allowed_setups_for_symbol(config, symbol)
     idea = find_trade_idea(client, symbol, allowed_setups)
     if idea is None:
@@ -184,6 +196,17 @@ def evaluate_and_queue(
     no_trade_emotion: str,
     no_trade_notes: str,
 ) -> str | None:
+    if count_open_trades(config.journal_path) >= config.max_open_positions:
+        log_id = log_no_trade(
+            config.no_trade_journal_path,
+            symbol=symbol,
+            reason="Max open positions reached",
+            market_context=no_trade_context,
+            emotional_state=no_trade_emotion,
+            notes=f"max_open_positions={config.max_open_positions}",
+        )
+        print(f"Max open positions reached. Logged no-trade: log_id={log_id}")
+        return None
     allowed_setups = _allowed_setups_for_symbol(config, symbol)
     idea = find_trade_idea(client, symbol, allowed_setups)
     if idea is None:

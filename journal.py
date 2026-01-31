@@ -514,3 +514,8 @@ def find_open_trade_id(journal_path: str, symbol: str) -> str | None:
     if not open_trades:
         return None
     return open_trades[-1]["trade_id"]
+
+
+def count_open_trades(journal_path: str) -> int:
+    rows = list(read_rows(journal_path))
+    return sum(1 for row in rows if not row.get("exit_ts"))

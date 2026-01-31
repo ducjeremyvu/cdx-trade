@@ -3,6 +3,7 @@ Rules and checklists (V0)
 Risk policy
 - Fixed position size: 1 share (SPY, QQQ, IWM).
 - Max trades per day: 1 per symbol.
+- Max open positions: 1.
 - No averaging down.
 - No new trades if a review is pending from prior trade.
 
