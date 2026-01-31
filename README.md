@@ -18,6 +18,7 @@ Run
 - Queue a signal without trading: `python main.py signal --symbol SPY`
 - Log an exit + review: `python main.py log-exit --trade-id <id> --exit-price 450.12 --outcome win --r-multiple 1.5 --exit-reason "TP hit" --what-went-right "Waited for break" --what-went-wrong "Late entry" --improvement-idea "Set alert before open"`
 - Review: `python main.py review --window daily`
+- Write daily report: `python main.py daily-report --date 2026-02-01`
 - Write weekly snapshot to knowledge base: `python main.py review-snapshot --date 2026-01-28`
 - Summarize no-trade logs: `python main.py no-trade-summary --window weekly`
 - Sync entry prices from filled orders: `python main.py sync`

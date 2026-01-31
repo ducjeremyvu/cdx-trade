@@ -20,3 +20,4 @@ Changelog
 - Added per-symbol setup allowlist and backtest approval gate.
 - Added options learning notes (no options execution in V0).
 - Added max open positions guard for small accounts.
+- Added daily markdown report command.

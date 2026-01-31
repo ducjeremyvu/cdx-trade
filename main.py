@@ -1,6 +1,7 @@
 import argparse
 import time
 from datetime import datetime, timedelta, timezone
+from datetime import date as date_cls
 
 import pandas as pd
 
@@ -322,6 +323,83 @@ def handle_review(config: AppConfig, args: argparse.Namespace) -> None:
         )
     for key, value in summary.items():
         print(f"{key}: {value}")
+
+
+def handle_daily_report(config: AppConfig, args: argparse.Namespace) -> None:
+    if args.date:
+        if "T" in args.date:
+            target_date = datetime.fromisoformat(args.date).date()
+        else:
+            target_date = date_cls.fromisoformat(args.date)
+    else:
+        target_date = datetime.now(timezone.utc).date()
+    start = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
+    end = start + timedelta(days=1)
+
+    summary = daily_summary(
+        config.journal_path, config.no_trade_journal_path, target_date.isoformat()
+    )
+    no_trades = no_trade_summary(
+        config.no_trade_journal_path, target_date.isoformat(), days=1
+    )
+    signals = list_signal_queue(config.signal_queue_path, status=None)
+    signals_in_window = []
+    for row in signals:
+        created_ts = row.get("created_ts")
+        if not created_ts:
+            continue
+        try:
+            created_dt = datetime.fromisoformat(created_ts)
+        except ValueError:
+            continue
+        if start <= created_dt < end:
+            signals_in_window.append(row)
+
+    status_counts: dict[str, int] = {}
+    for row in signals_in_window:
+        status = row.get("status") or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+
+    lines = []
+    lines.append(f"Daily report ({target_date.isoformat()})")
+    lines.append("")
+    lines.append("Trade summary")
+    lines.append("")
+    for key, value in summary.items():
+        lines.append(f"- {key}: {value}")
+    lines.append("")
+    lines.append("No-trade summary")
+    lines.append("")
+    for key, value in no_trades.items():
+        lines.append(f"- {key}: {value}")
+    lines.append("")
+    lines.append("Signal activity")
+    lines.append("")
+    lines.append(f"- signals_created: {len(signals_in_window)}")
+    for status, count in sorted(status_counts.items()):
+        lines.append(f"- {status}: {count}")
+    if signals_in_window:
+        lines.append("")
+        lines.append("Signals")
+        lines.append("")
+        for row in signals_in_window:
+            lines.append(
+                "- {symbol} {direction} {setup} status={status} id={signal_id}".format(
+                    symbol=row.get("symbol"),
+                    direction=row.get("direction"),
+                    setup=row.get("setup_name"),
+                    status=row.get("status"),
+                    signal_id=row.get("signal_id"),
+                )
+            )
+
+    output_dir = args.output_dir
+    output_path = (
+        f"{output_dir}/{target_date.isoformat()}_daily.md"
+    )
+    with open(output_path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines))
+    print(f"wrote_daily_report: {output_path}")
 
 
 def handle_sync(config: AppConfig, args: argparse.Namespace) -> None:
@@ -881,6 +959,20 @@ def build_parser() -> argparse.ArgumentParser:
         "review-queue", help="List trades that need post-trade review"
     )
 
+    daily_report_parser = subparsers.add_parser(
+        "daily-report", help="Write a daily markdown report"
+    )
+    daily_report_parser.add_argument(
+        "--date",
+        default=None,
+        help="Anchor date (YYYY-MM-DD or ISO datetime). Defaults to today.",
+    )
+    daily_report_parser.add_argument(
+        "--output-dir",
+        default="knowledge/reviews",
+        help="Directory for daily report files",
+    )
+
     sync_parser = subparsers.add_parser("sync", help="Sync entry prices from Alpaca")
     sync_parser.add_argument(
         "--limit",
@@ -1228,6 +1320,8 @@ def main() -> None:
         handle_run_sync(config, args)
     elif args.command == "review-queue":
         handle_review_queue(config, args)
+    elif args.command == "daily-report":
+        handle_daily_report(config, args)
     elif args.command == "signal-queue":
         handle_signal_queue(config, args)
     elif args.command == "approve-signal":

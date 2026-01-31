@@ -8,6 +8,7 @@ Purpose
 Structure
 - setups/: one file per setup definition
 - reviews/: weekly review snapshots
+- daily reports: one per day in knowledge/reviews
 - rules.md: risk policy and approval checklist
 - changelog.md: what changed and why
 - study.md: prompts for quiet days
