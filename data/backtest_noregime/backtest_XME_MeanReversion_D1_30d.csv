@@ -1,0 +1,3 @@
+symbol,setup_name,signal_ts,entry_ts,entry_price,stop_price,target_price,exit_ts,exit_price,exit_reason,r_multiple,outcome
+XME,MeanReversion_D1,2025-12-29T00:00:00-05:00,2025-12-30T00:00:00-05:00,106.875,105.055,110.515,2025-12-30T00:00:00-05:00,105.055,SL hit,-1.0,loss
+XME,MeanReversion_D1,2025-12-31T00:00:00-05:00,2026-01-02T00:00:00-05:00,105.27,103.04,109.73,2026-01-05T00:00:00-05:00,109.73,TP hit,2.0,win

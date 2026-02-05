@@ -15,6 +15,16 @@ Changelog
 2026-01-31
 - Updated rules to include SPY/QQQ/IWM universe and per-symbol daily limit.
 - Generated weekend backtest report.
+- Added project state report and setup allowlist based on weekend backtests.
+- Refreshed 30/60/90d backtests and tightened backtest gate defaults.
+- Added monthly backtest rollup report command and generated latest rollup.
+- Moved non-secret runtime specs to config.json and trimmed .env to secrets + CONFIG_PATH.
+- Added universe file, batch backtest command, regime filter, and daily scan output.
+- Added TwoDayBreakout_D1 setup with backtest + scan support.
+- Ran universe batch backtests and generated a daily scan report.
+- Ran no-regime batch backtests, auto-updated allowlist, and wrote no-regime weekend report.
+- Expanded universe, re-ran regime and no-regime batch backtests, and compared 30d results.
+- Expanded universe again and refreshed allowlist + regime/no-regime reports.
 
 2026-02-01
 - Added per-symbol setup allowlist and backtest approval gate.

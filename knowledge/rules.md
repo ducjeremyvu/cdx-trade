@@ -23,7 +23,34 @@ Universe and data
 - Symbols: QQQ, IWM (SPY on hold due to weak backtests).
 - Data: daily bars only (paper data is 15-minute delayed).
 - Watch-only: SPY (signals logged as no-trade).
+- Universe file: data/universe.txt (used for scans/backtests).
+
+Setup allowlist (auto-updated from 90d no-regime backtests)
+- See knowledge/reviews/allowlist_noregime_2026-01-31.md for current list.
+- Other symbols default to enabled_setups unless explicitly listed.
+
+Allowlist enforcement
+- allowlist_only is enabled in config.json (symbols not listed are ignored).
+
+Setup definitions (daily bars)
+- PrevDayBreakout_D1: yesterday close > prior day high; stop below prior day low.
+- MeanReversion_D1: yesterday close < prior day low; stop below yesterday low.
+- TwoDayBreakout_D1: yesterday close > prior 2-day high; stop below prior 2-day low.
+
+Backtest gate (aligned to 90d window)
+- BACKTEST_GATE_DAYS: 90
+- BACKTEST_GATE_MIN_TRADES: 15
+- BACKTEST_GATE_MIN_AVG_R: 0.10
+- BACKTEST_GATE_MIN_WIN_RATE: 0.48
+
+Regime filter (SMA-based)
+- Enabled in config.json.
+- PrevDayBreakout_D1 only when fast SMA > slow SMA (trend).
+- MeanReversion_D1 only when fast SMA < slow SMA (range).
 
 Review discipline
 - Every closed trade must be reviewed the same or next day.
 - Weekly review is mandatory.
+
+Config notes
+- Non-secret specs live in config.json; env vars override when set.

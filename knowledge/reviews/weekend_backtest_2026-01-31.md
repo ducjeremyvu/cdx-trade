@@ -4,41 +4,104 @@ Backtest summary (daily bars, 15-min delayed paper data)
 
 | symbol | setup | window_days | trades | win_rate | avg_r | median_r | best_r | worst_r | csv |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| SPY | PrevDayBreakout_D1 | 30 | 11 | 0.45 | -0.31 | -1.00 | 0.90 | -1.00 | data/backtest_SPY_PrevDayBreakout_D1_30d.csv |
-| SPY | PrevDayBreakout_D1 | 60 | 20 | 0.45 | -0.24 | -0.88 | 2.00 | -1.00 | data/backtest_SPY_PrevDayBreakout_D1_60d.csv |
-| SPY | PrevDayBreakout_D1 | 90 | 30 | 0.47 | -0.09 | -0.18 | 2.00 | -1.00 | data/backtest_SPY_PrevDayBreakout_D1_90d.csv |
-| SPY | MeanReversion_D1 | 30 | 7 | 0.29 | -0.00 | -1.00 | 2.00 | -1.00 | data/backtest_SPY_MeanReversion_D1_30d.csv |
-| SPY | MeanReversion_D1 | 60 | 13 | 0.23 | -0.23 | -1.00 | 2.00 | -1.00 | data/backtest_SPY_MeanReversion_D1_60d.csv |
-| SPY | MeanReversion_D1 | 90 | 18 | 0.33 | -0.03 | -1.00 | 2.00 | -1.00 | data/backtest_SPY_MeanReversion_D1_90d.csv |
-| QQQ | PrevDayBreakout_D1 | 30 | 13 | 0.38 | -0.22 | -1.00 | 2.00 | -1.00 | data/backtest_QQQ_PrevDayBreakout_D1_30d.csv |
-| QQQ | PrevDayBreakout_D1 | 60 | 21 | 0.48 | -0.06 | -0.03 | 2.00 | -1.00 | data/backtest_QQQ_PrevDayBreakout_D1_60d.csv |
-| QQQ | PrevDayBreakout_D1 | 90 | 33 | 0.52 | -0.07 | 0.12 | 2.00 | -1.00 | data/backtest_QQQ_PrevDayBreakout_D1_90d.csv |
-| QQQ | MeanReversion_D1 | 30 | 8 | 0.62 | 0.72 | 1.15 | 2.00 | -1.00 | data/backtest_QQQ_MeanReversion_D1_30d.csv |
-| QQQ | MeanReversion_D1 | 60 | 12 | 0.42 | 0.15 | -0.77 | 2.00 | -1.00 | data/backtest_QQQ_MeanReversion_D1_60d.csv |
-| QQQ | MeanReversion_D1 | 90 | 17 | 0.53 | 0.42 | 0.39 | 2.00 | -1.00 | data/backtest_QQQ_MeanReversion_D1_90d.csv |
-| IWM | PrevDayBreakout_D1 | 30 | 10 | 0.60 | 0.57 | 0.90 | 2.00 | -1.00 | data/backtest_IWM_PrevDayBreakout_D1_30d.csv |
-| IWM | PrevDayBreakout_D1 | 60 | 19 | 0.58 | 0.29 | 0.47 | 2.00 | -1.00 | data/backtest_IWM_PrevDayBreakout_D1_60d.csv |
-| IWM | PrevDayBreakout_D1 | 90 | 27 | 0.48 | 0.12 | -0.04 | 2.00 | -1.00 | data/backtest_IWM_PrevDayBreakout_D1_90d.csv |
-| IWM | MeanReversion_D1 | 30 | 9 | 0.22 | -0.47 | -1.00 | 2.00 | -1.00 | data/backtest_IWM_MeanReversion_D1_30d.csv |
-| IWM | MeanReversion_D1 | 60 | 14 | 0.36 | -0.02 | -1.00 | 2.00 | -1.00 | data/backtest_IWM_MeanReversion_D1_60d.csv |
-| IWM | MeanReversion_D1 | 90 | 21 | 0.38 | 0.08 | -1.00 | 2.00 | -1.00 | data/backtest_IWM_MeanReversion_D1_90d.csv |
-
-Weekly summary
-
-- total_trades: 0
-- closed_trades: 0
-- open_trades: 0
-- win_rate: 0.0
-- avg_r: 0.0
-- no_trades: 5
-- most_common_mistake: no trades
-- negative_expectancy_setups: no trades
-- emotional_pattern: no trades
-
-No-trade summary
-
-- total_no_trades: 5
-- top_reason: No valid setup
-- top_context: unclear
-- top_emotion: calm
-- reason_counts: [['No valid setup', 5]]
+| DIA | PrevDayBreakout_D1 | 60d | 4 | 0.00 | -0.65 | -0.68 | -0.24 | -1.00 | data/backtest_DIA_PrevDayBreakout_D1_60d.csv |
+| DIA | PrevDayBreakout_D1 | 90d | 15 | 0.40 | 0.07 | -0.33 | 2.00 | -1.00 | data/backtest_DIA_PrevDayBreakout_D1_90d.csv |
+| DIA | TwoDayBreakout_D1 | 60d | 1 | 0.00 | -0.20 | -0.20 | -0.20 | -0.20 | data/backtest_DIA_TwoDayBreakout_D1_60d.csv |
+| DIA | TwoDayBreakout_D1 | 90d | 9 | 0.33 | -0.23 | -0.21 | 0.59 | -1.00 | data/backtest_DIA_TwoDayBreakout_D1_90d.csv |
+| IGV | MeanReversion_D1 | 60d | 6 | 0.17 | -0.79 | -1.00 | 0.26 | -1.00 | data/backtest_IGV_MeanReversion_D1_60d.csv |
+| IGV | MeanReversion_D1 | 90d | 13 | 0.23 | -0.44 | -1.00 | 2.00 | -1.00 | data/backtest_IGV_MeanReversion_D1_90d.csv |
+| IWM | MeanReversion_D1 | 90d | 3 | 0.33 | 0.00 | -1.00 | 2.00 | -1.00 | data/backtest_IWM_MeanReversion_D1_90d.csv |
+| IWM | PrevDayBreakout_D1 | 60d | 4 | 0.25 | 0.02 | -0.46 | 2.00 | -1.00 | data/backtest_IWM_PrevDayBreakout_D1_60d.csv |
+| IWM | PrevDayBreakout_D1 | 90d | 10 | 0.60 | 0.57 | 0.90 | 2.00 | -1.00 | data/backtest_IWM_PrevDayBreakout_D1_90d.csv |
+| IWM | TwoDayBreakout_D1 | 60d | 4 | 0.25 | -0.24 | -0.46 | 0.99 | -1.00 | data/backtest_IWM_TwoDayBreakout_D1_60d.csv |
+| IWM | TwoDayBreakout_D1 | 90d | 9 | 0.56 | 0.22 | 0.48 | 1.43 | -1.00 | data/backtest_IWM_TwoDayBreakout_D1_90d.csv |
+| IYR | MeanReversion_D1 | 60d | 1 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_IYR_MeanReversion_D1_60d.csv |
+| IYR | MeanReversion_D1 | 90d | 6 | 0.50 | 0.50 | 0.50 | 2.00 | -1.00 | data/backtest_IYR_MeanReversion_D1_90d.csv |
+| IYR | PrevDayBreakout_D1 | 60d | 1 | 1.00 | 0.22 | 0.22 | 0.22 | 0.22 | data/backtest_IYR_PrevDayBreakout_D1_60d.csv |
+| IYR | PrevDayBreakout_D1 | 90d | 1 | 1.00 | 0.22 | 0.22 | 0.22 | 0.22 | data/backtest_IYR_PrevDayBreakout_D1_90d.csv |
+| IYR | TwoDayBreakout_D1 | 60d | 1 | 1.00 | 0.22 | 0.22 | 0.22 | 0.22 | data/backtest_IYR_TwoDayBreakout_D1_60d.csv |
+| IYR | TwoDayBreakout_D1 | 90d | 1 | 1.00 | 0.22 | 0.22 | 0.22 | 0.22 | data/backtest_IYR_TwoDayBreakout_D1_90d.csv |
+| IYT | PrevDayBreakout_D1 | 60d | 3 | 0.00 | -0.71 | -0.92 | -0.20 | -1.00 | data/backtest_IYT_PrevDayBreakout_D1_60d.csv |
+| IYT | PrevDayBreakout_D1 | 90d | 11 | 0.27 | -0.29 | -0.51 | 2.00 | -1.00 | data/backtest_IYT_PrevDayBreakout_D1_90d.csv |
+| IYT | TwoDayBreakout_D1 | 60d | 1 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_IYT_TwoDayBreakout_D1_60d.csv |
+| IYT | TwoDayBreakout_D1 | 90d | 8 | 0.38 | -0.13 | -0.37 | 2.00 | -1.00 | data/backtest_IYT_TwoDayBreakout_D1_90d.csv |
+| KRE | PrevDayBreakout_D1 | 60d | 3 | 0.33 | -0.26 | -0.23 | 0.13 | -0.69 | data/backtest_KRE_PrevDayBreakout_D1_60d.csv |
+| KRE | PrevDayBreakout_D1 | 90d | 8 | 0.50 | 0.01 | -0.07 | 2.00 | -1.00 | data/backtest_KRE_PrevDayBreakout_D1_90d.csv |
+| KRE | TwoDayBreakout_D1 | 60d | 3 | 0.33 | -0.26 | -0.23 | 0.13 | -0.69 | data/backtest_KRE_TwoDayBreakout_D1_60d.csv |
+| KRE | TwoDayBreakout_D1 | 90d | 8 | 0.50 | 0.02 | -0.07 | 2.00 | -1.00 | data/backtest_KRE_TwoDayBreakout_D1_90d.csv |
+| QQQ | MeanReversion_D1 | 90d | 1 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_QQQ_MeanReversion_D1_90d.csv |
+| QQQ | PrevDayBreakout_D1 | 60d | 6 | 0.50 | 0.09 | -0.16 | 2.00 | -1.00 | data/backtest_QQQ_PrevDayBreakout_D1_60d.csv |
+| QQQ | PrevDayBreakout_D1 | 90d | 16 | 0.44 | -0.07 | -0.52 | 2.00 | -1.00 | data/backtest_QQQ_PrevDayBreakout_D1_90d.csv |
+| QQQ | TwoDayBreakout_D1 | 60d | 5 | 0.20 | -0.39 | -0.65 | 0.78 | -1.00 | data/backtest_QQQ_TwoDayBreakout_D1_60d.csv |
+| QQQ | TwoDayBreakout_D1 | 90d | 14 | 0.36 | -0.28 | -0.37 | 0.78 | -1.00 | data/backtest_QQQ_TwoDayBreakout_D1_90d.csv |
+| SMH | PrevDayBreakout_D1 | 60d | 4 | 0.25 | -0.33 | -0.38 | 0.44 | -1.00 | data/backtest_SMH_PrevDayBreakout_D1_60d.csv |
+| SMH | PrevDayBreakout_D1 | 90d | 19 | 0.63 | 0.35 | 0.44 | 2.00 | -1.00 | data/backtest_SMH_PrevDayBreakout_D1_90d.csv |
+| SMH | TwoDayBreakout_D1 | 60d | 3 | 0.00 | -0.48 | -0.64 | -0.13 | -0.68 | data/backtest_SMH_TwoDayBreakout_D1_60d.csv |
+| SMH | TwoDayBreakout_D1 | 90d | 18 | 0.67 | 0.30 | 0.36 | 2.00 | -1.00 | data/backtest_SMH_TwoDayBreakout_D1_90d.csv |
+| SPY | PrevDayBreakout_D1 | 60d | 5 | 0.40 | -0.40 | -1.00 | 0.59 | -1.00 | data/backtest_SPY_PrevDayBreakout_D1_60d.csv |
+| SPY | PrevDayBreakout_D1 | 90d | 15 | 0.40 | -0.29 | -1.00 | 2.00 | -1.00 | data/backtest_SPY_PrevDayBreakout_D1_90d.csv |
+| SPY | TwoDayBreakout_D1 | 60d | 3 | 0.33 | -0.50 | -1.00 | 0.51 | -1.00 | data/backtest_SPY_TwoDayBreakout_D1_60d.csv |
+| SPY | TwoDayBreakout_D1 | 90d | 13 | 0.38 | -0.40 | -1.00 | 0.90 | -1.00 | data/backtest_SPY_TwoDayBreakout_D1_90d.csv |
+| XBI | PrevDayBreakout_D1 | 60d | 4 | 0.00 | -0.77 | -0.85 | -0.37 | -1.00 | data/backtest_XBI_PrevDayBreakout_D1_60d.csv |
+| XBI | PrevDayBreakout_D1 | 90d | 11 | 0.36 | -0.38 | -0.37 | 0.39 | -1.00 | data/backtest_XBI_PrevDayBreakout_D1_90d.csv |
+| XBI | TwoDayBreakout_D1 | 60d | 3 | 0.00 | -0.60 | -0.43 | -0.37 | -1.00 | data/backtest_XBI_TwoDayBreakout_D1_60d.csv |
+| XBI | TwoDayBreakout_D1 | 90d | 7 | 0.29 | -0.32 | -0.37 | 0.30 | -1.00 | data/backtest_XBI_TwoDayBreakout_D1_90d.csv |
+| XHB | MeanReversion_D1 | 90d | 3 | 0.33 | 0.00 | -1.00 | 2.00 | -1.00 | data/backtest_XHB_MeanReversion_D1_90d.csv |
+| XHB | PrevDayBreakout_D1 | 60d | 3 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XHB_PrevDayBreakout_D1_60d.csv |
+| XHB | PrevDayBreakout_D1 | 90d | 10 | 0.20 | -0.61 | -1.00 | 1.05 | -1.00 | data/backtest_XHB_PrevDayBreakout_D1_90d.csv |
+| XHB | TwoDayBreakout_D1 | 60d | 2 | 0.50 | -0.44 | -0.44 | 0.11 | -1.00 | data/backtest_XHB_TwoDayBreakout_D1_60d.csv |
+| XHB | TwoDayBreakout_D1 | 90d | 7 | 0.43 | -0.27 | -0.17 | 0.91 | -1.00 | data/backtest_XHB_TwoDayBreakout_D1_90d.csv |
+| XLB | MeanReversion_D1 | 60d | 2 | 0.50 | 0.50 | 0.50 | 2.00 | -1.00 | data/backtest_XLB_MeanReversion_D1_60d.csv |
+| XLB | MeanReversion_D1 | 90d | 6 | 0.33 | 0.00 | -1.00 | 2.00 | -1.00 | data/backtest_XLB_MeanReversion_D1_90d.csv |
+| XLE | MeanReversion_D1 | 90d | 8 | 0.62 | 0.88 | 2.00 | 2.00 | -1.00 | data/backtest_XLE_MeanReversion_D1_90d.csv |
+| XLE | PrevDayBreakout_D1 | 90d | 3 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XLE_PrevDayBreakout_D1_90d.csv |
+| XLE | TwoDayBreakout_D1 | 90d | 3 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XLE_TwoDayBreakout_D1_90d.csv |
+| XLF | MeanReversion_D1 | 90d | 2 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XLF_MeanReversion_D1_90d.csv |
+| XLF | PrevDayBreakout_D1 | 60d | 2 | 0.50 | -0.46 | -0.46 | 0.09 | -1.00 | data/backtest_XLF_PrevDayBreakout_D1_60d.csv |
+| XLF | PrevDayBreakout_D1 | 90d | 5 | 0.20 | -0.52 | -0.46 | 0.09 | -1.00 | data/backtest_XLF_PrevDayBreakout_D1_90d.csv |
+| XLF | TwoDayBreakout_D1 | 60d | 1 | 1.00 | 0.09 | 0.09 | 0.09 | 0.09 | data/backtest_XLF_TwoDayBreakout_D1_60d.csv |
+| XLF | TwoDayBreakout_D1 | 90d | 4 | 0.25 | -0.39 | -0.32 | 0.09 | -1.00 | data/backtest_XLF_TwoDayBreakout_D1_90d.csv |
+| XLI | MeanReversion_D1 | 90d | 3 | 0.67 | 1.00 | 2.00 | 2.00 | -1.00 | data/backtest_XLI_MeanReversion_D1_90d.csv |
+| XLI | PrevDayBreakout_D1 | 60d | 5 | 0.40 | -0.16 | -0.60 | 1.13 | -1.00 | data/backtest_XLI_PrevDayBreakout_D1_60d.csv |
+| XLI | PrevDayBreakout_D1 | 90d | 13 | 0.54 | 0.19 | 0.31 | 2.00 | -1.00 | data/backtest_XLI_PrevDayBreakout_D1_90d.csv |
+| XLI | TwoDayBreakout_D1 | 60d | 4 | 0.50 | 0.12 | 0.09 | 0.91 | -0.60 | data/backtest_XLI_TwoDayBreakout_D1_60d.csv |
+| XLI | TwoDayBreakout_D1 | 90d | 10 | 0.50 | 0.13 | 0.07 | 1.08 | -1.00 | data/backtest_XLI_TwoDayBreakout_D1_90d.csv |
+| XLK | MeanReversion_D1 | 60d | 3 | 0.33 | 0.00 | -1.00 | 2.00 | -1.00 | data/backtest_XLK_MeanReversion_D1_60d.csv |
+| XLK | MeanReversion_D1 | 90d | 9 | 0.33 | -0.02 | -1.00 | 2.00 | -1.00 | data/backtest_XLK_MeanReversion_D1_90d.csv |
+| XLK | PrevDayBreakout_D1 | 90d | 1 | 1.00 | 2.00 | 2.00 | 2.00 | 2.00 | data/backtest_XLK_PrevDayBreakout_D1_90d.csv |
+| XLK | TwoDayBreakout_D1 | 90d | 1 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XLK_TwoDayBreakout_D1_90d.csv |
+| XLP | MeanReversion_D1 | 90d | 3 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XLP_MeanReversion_D1_90d.csv |
+| XLP | PrevDayBreakout_D1 | 60d | 5 | 0.60 | -0.05 | 0.13 | 0.89 | -1.00 | data/backtest_XLP_PrevDayBreakout_D1_60d.csv |
+| XLP | PrevDayBreakout_D1 | 90d | 14 | 0.57 | 0.15 | 0.18 | 2.00 | -1.00 | data/backtest_XLP_PrevDayBreakout_D1_90d.csv |
+| XLP | TwoDayBreakout_D1 | 60d | 4 | 1.00 | 0.33 | 0.37 | 0.50 | 0.09 | data/backtest_XLP_TwoDayBreakout_D1_60d.csv |
+| XLP | TwoDayBreakout_D1 | 90d | 11 | 0.73 | 0.20 | 0.26 | 1.83 | -1.00 | data/backtest_XLP_TwoDayBreakout_D1_90d.csv |
+| XLRE | MeanReversion_D1 | 60d | 2 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XLRE_MeanReversion_D1_60d.csv |
+| XLRE | MeanReversion_D1 | 90d | 8 | 0.50 | 0.39 | 0.06 | 2.00 | -1.00 | data/backtest_XLRE_MeanReversion_D1_90d.csv |
+| XLRE | PrevDayBreakout_D1 | 60d | 1 | 1.00 | 0.28 | 0.28 | 0.28 | 0.28 | data/backtest_XLRE_PrevDayBreakout_D1_60d.csv |
+| XLRE | PrevDayBreakout_D1 | 90d | 1 | 1.00 | 0.28 | 0.28 | 0.28 | 0.28 | data/backtest_XLRE_PrevDayBreakout_D1_90d.csv |
+| XLRE | TwoDayBreakout_D1 | 60d | 1 | 1.00 | 0.28 | 0.28 | 0.28 | 0.28 | data/backtest_XLRE_TwoDayBreakout_D1_60d.csv |
+| XLRE | TwoDayBreakout_D1 | 90d | 1 | 1.00 | 0.28 | 0.28 | 0.28 | 0.28 | data/backtest_XLRE_TwoDayBreakout_D1_90d.csv |
+| XLU | MeanReversion_D1 | 60d | 1 | 1.00 | 2.00 | 2.00 | 2.00 | 2.00 | data/backtest_XLU_MeanReversion_D1_60d.csv |
+| XLU | MeanReversion_D1 | 90d | 11 | 0.36 | 0.09 | -1.00 | 2.00 | -1.00 | data/backtest_XLU_MeanReversion_D1_90d.csv |
+| XLV | PrevDayBreakout_D1 | 60d | 2 | 0.00 | -0.89 | -0.89 | -0.77 | -1.00 | data/backtest_XLV_PrevDayBreakout_D1_60d.csv |
+| XLV | PrevDayBreakout_D1 | 90d | 8 | 0.12 | -0.68 | -0.89 | 0.05 | -1.00 | data/backtest_XLV_PrevDayBreakout_D1_90d.csv |
+| XLV | TwoDayBreakout_D1 | 60d | 2 | 0.00 | -0.89 | -0.89 | -0.77 | -1.00 | data/backtest_XLV_TwoDayBreakout_D1_60d.csv |
+| XLV | TwoDayBreakout_D1 | 90d | 8 | 0.12 | -0.56 | -0.57 | 0.05 | -1.00 | data/backtest_XLV_TwoDayBreakout_D1_90d.csv |
+| XLY | MeanReversion_D1 | 60d | 4 | 0.50 | 0.01 | -0.48 | 2.00 | -1.00 | data/backtest_XLY_MeanReversion_D1_60d.csv |
+| XLY | MeanReversion_D1 | 90d | 9 | 0.44 | -0.09 | -1.00 | 2.00 | -1.00 | data/backtest_XLY_MeanReversion_D1_90d.csv |
+| XME | MeanReversion_D1 | 90d | 2 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XME_MeanReversion_D1_90d.csv |
+| XME | PrevDayBreakout_D1 | 60d | 4 | 0.25 | 0.21 | -0.08 | 2.00 | -1.00 | data/backtest_XME_PrevDayBreakout_D1_60d.csv |
+| XME | PrevDayBreakout_D1 | 90d | 11 | 0.55 | 0.50 | 0.63 | 2.00 | -1.00 | data/backtest_XME_PrevDayBreakout_D1_90d.csv |
+| XME | TwoDayBreakout_D1 | 60d | 4 | 0.25 | 0.22 | -0.06 | 2.00 | -1.00 | data/backtest_XME_TwoDayBreakout_D1_60d.csv |
+| XME | TwoDayBreakout_D1 | 90d | 11 | 0.55 | 0.37 | 0.43 | 2.00 | -1.00 | data/backtest_XME_TwoDayBreakout_D1_90d.csv |
+| XOP | MeanReversion_D1 | 60d | 1 | 1.00 | 2.00 | 2.00 | 2.00 | 2.00 | data/backtest_XOP_MeanReversion_D1_60d.csv |
+| XOP | MeanReversion_D1 | 90d | 2 | 1.00 | 2.00 | 2.00 | 2.00 | 2.00 | data/backtest_XOP_MeanReversion_D1_90d.csv |
+| XOP | PrevDayBreakout_D1 | 60d | 1 | 1.00 | 0.43 | 0.43 | 0.43 | 0.43 | data/backtest_XOP_PrevDayBreakout_D1_60d.csv |
+| XOP | PrevDayBreakout_D1 | 90d | 6 | 0.33 | -0.14 | -0.24 | 0.81 | -1.00 | data/backtest_XOP_PrevDayBreakout_D1_90d.csv |
+| XOP | TwoDayBreakout_D1 | 60d | 1 | 1.00 | 0.32 | 0.32 | 0.32 | 0.32 | data/backtest_XOP_TwoDayBreakout_D1_60d.csv |
+| XOP | TwoDayBreakout_D1 | 90d | 6 | 0.33 | -0.21 | -0.22 | 0.43 | -1.00 | data/backtest_XOP_TwoDayBreakout_D1_90d.csv |
+| XRT | PrevDayBreakout_D1 | 60d | 2 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XRT_PrevDayBreakout_D1_60d.csv |
+| XRT | PrevDayBreakout_D1 | 90d | 6 | 0.33 | -0.27 | -1.00 | 2.00 | -1.00 | data/backtest_XRT_PrevDayBreakout_D1_90d.csv |
+| XRT | TwoDayBreakout_D1 | 60d | 1 | 0.00 | -1.00 | -1.00 | -1.00 | -1.00 | data/backtest_XRT_TwoDayBreakout_D1_60d.csv |
+| XRT | TwoDayBreakout_D1 | 90d | 4 | 0.75 | 0.36 | 0.22 | 2.00 | -1.00 | data/backtest_XRT_TwoDayBreakout_D1_90d.csv |
+| recent | MeanReversion | recent | 13 | 0.23 | -0.23 | -1.00 | 2.00 | -1.00 | data/backtest_recent_MeanReversion_D1.csv |

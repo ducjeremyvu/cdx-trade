@@ -1,0 +1,5 @@
+symbol,setup_name,signal_ts,entry_ts,entry_price,stop_price,target_price,exit_ts,exit_price,exit_reason,r_multiple,outcome
+XLB,MeanReversion_D1,2025-12-29T00:00:00-05:00,2025-12-30T00:00:00-05:00,45.81,45.535,46.36,2025-12-31T00:00:00-05:00,45.535,SL hit,-1.0,loss
+XLB,MeanReversion_D1,2025-12-31T00:00:00-05:00,2026-01-02T00:00:00-05:00,45.47,45.33,45.75,2026-01-02T00:00:00-05:00,45.33,SL hit,-1.0,loss
+XLB,MeanReversion_D1,2026-01-20T00:00:00-05:00,2026-01-21T00:00:00-05:00,48.74,48.025,50.17,2026-01-26T00:00:00-05:00,50.17,TP hit,2.0,win
+XLB,MeanReversion_D1,2026-01-27T00:00:00-05:00,2026-01-28T00:00:00-05:00,50.16,49.69,51.1,2026-01-28T00:00:00-05:00,49.69,SL hit,-1.0,loss

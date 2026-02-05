@@ -1,4 +1,5 @@
 import argparse
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from datetime import date as date_cls
@@ -6,7 +7,12 @@ from datetime import date as date_cls
 import pandas as pd
 
 from alpaca_client import AlpacaClient
-from backtest import run_backtest, summarize_backtest, run_recent_backtest
+from backtest import (
+    run_backtest,
+    summarize_backtest,
+    run_recent_backtest,
+    write_backtest_rollup,
+)
 from config import AppConfig
 from journal import (
     init_journal,
@@ -39,6 +45,28 @@ from review import (
 )
 
 
+def _regime_filter(config: AppConfig) -> dict:
+    return {
+        "enabled": config.regime_filter_enabled,
+        "fast_sma": config.regime_fast_sma,
+        "slow_sma": config.regime_slow_sma,
+    }
+
+
+def _read_universe(path: str) -> list[str]:
+    symbols: list[str] = []
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            for line in file:
+                raw = line.strip()
+                if not raw or raw.startswith("#"):
+                    continue
+                symbols.append(raw.upper())
+    except FileNotFoundError:
+        raise RuntimeError(f"Universe file not found: {path}")
+    return symbols
+
+
 def build_order_list(client: AlpacaClient, limit: int) -> list[dict]:
     orders = client.list_recent_orders(limit=limit, status="closed")
     order_list = []
@@ -65,7 +93,7 @@ def _allowed_setups_for_symbol(config: AppConfig, symbol: str) -> set[str] | Non
     enabled = set(config.enabled_setups) if config.enabled_setups else None
     symbol_key = symbol.upper()
     if symbol_key not in config.setups_by_symbol:
-        return enabled
+        return set() if config.allowlist_only else enabled
     symbol_setups = set(config.setups_by_symbol[symbol_key])
     if enabled is None:
         return symbol_setups
@@ -91,6 +119,7 @@ def _passes_backtest_gate(
         time_stop_days=5,
         output_path=output_path,
         setup_name=setup_name,
+        regime_filter=_regime_filter(config),
     )
     if result.total_trades < config.backtest_gate_min_trades:
         return (
@@ -150,7 +179,12 @@ def evaluate_and_trade(
         print(f"Max open positions reached. Logged no-trade: log_id={log_id}")
         return None
     allowed_setups = _allowed_setups_for_symbol(config, symbol)
-    idea = find_trade_idea(client, symbol, allowed_setups)
+    idea = find_trade_idea(
+        client,
+        symbol,
+        allowed_setups,
+        regime_filter=_regime_filter(config),
+    )
     if idea is None:
         log_id = log_no_trade(
             config.no_trade_journal_path,
@@ -231,7 +265,12 @@ def evaluate_and_queue(
         print(f"Max open positions reached. Logged no-trade: log_id={log_id}")
         return None
     allowed_setups = _allowed_setups_for_symbol(config, symbol)
-    idea = find_trade_idea(client, symbol, allowed_setups)
+    idea = find_trade_idea(
+        client,
+        symbol,
+        allowed_setups,
+        regime_filter=_regime_filter(config),
+    )
     if idea is None:
         log_id = log_no_trade(
             config.no_trade_journal_path,
@@ -781,6 +820,7 @@ def handle_backtest(config: AppConfig, args: argparse.Namespace) -> None:
         output_path=args.output,
         setup_name=args.setup,
         recent_days=args.recent_days,
+        regime_filter=_regime_filter(config) if args.use_regime else None,
     )
     print(f"trades_path: {result.trades_path}")
     print(f"total_trades: {result.total_trades}")
@@ -814,6 +854,20 @@ def handle_backtest_summary(config: AppConfig, args: argparse.Namespace) -> None
             )
 
 
+def handle_backtest_rollup(config: AppConfig, args: argparse.Namespace) -> None:
+    if args.output:
+        output_path = args.output
+    else:
+        today = date_cls.today().isoformat()
+        output_path = f"knowledge/reviews/monthly_backtest_rollup_{today}.md"
+    path = write_backtest_rollup(
+        input_glob=args.glob,
+        months=args.months,
+        output_path=output_path,
+    )
+    print(f"wrote_rollup: {path}")
+
+
 def handle_assess_signal(config: AppConfig, args: argparse.Namespace) -> None:
     client = AlpacaClient(config)
     rows = list_signal_queue(config.signal_queue_path, status="pending")
@@ -830,6 +884,7 @@ def handle_assess_signal(config: AppConfig, args: argparse.Namespace) -> None:
         time_stop_days=args.time_stop_days,
         output_path=output_path,
         setup_name=setup_name,
+        regime_filter=_regime_filter(config) if args.use_regime else None,
     )
     print(f"setup_name: {setup_name}")
     print(f"recent_days: {args.recent_days}")
@@ -858,10 +913,102 @@ def handle_no_trade_summary(config: AppConfig, args: argparse.Namespace) -> None
     print(f"top_reason: {summary['top_reason']}")
     print(f"top_context: {summary['top_context']}")
     print(f"top_emotion: {summary['top_emotion']}")
-    if summary["reason_counts"]:
-        print("reason_counts:")
-        for reason, count in summary["reason_counts"]:
-            print(f"  {reason}: {count}")
+
+
+def handle_backtest_batch(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    symbols = (
+        [value.strip().upper() for value in args.symbols.split(",") if value.strip()]
+        if args.symbols
+        else _read_universe(args.universe_path or config.universe_path)
+    )
+    setups = (
+        [value.strip() for value in args.setups.split(",") if value.strip()]
+        if args.setups
+        else config.enabled_setups
+    )
+    windows = [int(value) for value in args.windows.split(",") if value.strip()]
+    regime_filter = _regime_filter(config) if args.use_regime else None
+
+    for symbol in symbols:
+        for setup in setups:
+            for window in windows:
+                output = f"{args.output_dir}/backtest_{symbol}_{setup}_{window}d.csv"
+                end = pd.Timestamp.now(tz="UTC").date().isoformat()
+                start = (
+                    pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=window * 3)
+                ).date().isoformat()
+                result = run_backtest(
+                    client=client,
+                    symbol=symbol,
+                    start=start,
+                    end=end,
+                    risk_multiple=args.risk_multiple,
+                    time_stop_days=args.time_stop_days,
+                    output_path=output,
+                    setup_name=setup,
+                    recent_days=window,
+                    regime_filter=regime_filter,
+                )
+                print(
+                    f"{symbol} {setup} {window}d "
+                    f"trades={result.total_trades} win_rate={result.win_rate:.2f} "
+                    f"avg_r={result.avg_r:.2f}"
+                )
+
+
+def handle_scan(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    symbols = (
+        [value.strip().upper() for value in args.symbols.split(",") if value.strip()]
+        if args.symbols
+        else _read_universe(args.universe_path or config.universe_path)
+    )
+    regime_filter = _regime_filter(config)
+    ideas: list[dict] = []
+    for symbol in symbols:
+        if symbol in config.watch_only_symbols and not args.include_watch_only:
+            continue
+        allowed_setups = _allowed_setups_for_symbol(config, symbol)
+        idea = find_trade_idea(
+            client,
+            symbol,
+            allowed_setups,
+            regime_filter=regime_filter,
+        )
+        if idea:
+            ideas.append(idea)
+
+    if args.output:
+        output_path = args.output
+    else:
+        today = date_cls.today().isoformat()
+        output_path = f"knowledge/reviews/scan_{today}.md"
+
+    lines = []
+    lines.append(f"Daily scan ({date_cls.today().isoformat()})")
+    lines.append("")
+    lines.append(f"symbols_scanned: {len(symbols)}")
+    lines.append(f"candidates: {len(ideas)}")
+    lines.append(
+        f"regime_filter: {'on' if regime_filter.get('enabled') else 'off'} "
+        f"(fast={regime_filter.get('fast_sma')}, slow={regime_filter.get('slow_sma')})"
+    )
+    lines.append("")
+    lines.append("| symbol | setup | direction | entry_reason | stop | target |")
+    lines.append("| --- | --- | --- | --- | --- | --- |")
+    for idea in ideas:
+        lines.append(
+            f"| {idea['symbol']} | {idea['setup_name']} | {idea['direction']} | "
+            f"{idea['entry_reason']} | {idea['stop_loss_logic']} | {idea['take_profit_logic']} |"
+        )
+
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines) + "\n")
+    print(f"wrote_scan: {output_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1222,7 +1369,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     backtest_parser.add_argument(
         "--setup",
-        choices=["PrevDayBreakout_D1", "MeanReversion_D1"],
+        choices=["PrevDayBreakout_D1", "MeanReversion_D1", "TwoDayBreakout_D1"],
         default="PrevDayBreakout_D1",
         help="Setup to backtest",
     )
@@ -1236,6 +1383,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default="data/backtest_trades.csv",
         help="CSV output path",
+    )
+    backtest_parser.add_argument(
+        "--use-regime",
+        action="store_true",
+        help="Apply regime filter to backtest signals",
     )
 
     backtest_summary_parser = subparsers.add_parser(
@@ -1251,6 +1403,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=6,
         help="Number of recent months to show",
+    )
+
+    backtest_rollup_parser = subparsers.add_parser(
+        "backtest-rollup", help="Write a monthly rollup across backtest CSVs"
+    )
+    backtest_rollup_parser.add_argument(
+        "--glob",
+        default="data/backtest_*_90d.csv",
+        help="Glob for backtest CSVs to include",
+    )
+    backtest_rollup_parser.add_argument(
+        "--months",
+        type=int,
+        default=6,
+        help="Number of recent months to include",
+    )
+    backtest_rollup_parser.add_argument(
+        "--output",
+        default=None,
+        help="Markdown output path (defaults to knowledge/reviews/...)",
     )
 
     review_snapshot_parser = subparsers.add_parser(
@@ -1293,6 +1465,81 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default=None,
         help="CSV output path (optional)",
+    )
+    assess_signal_parser.add_argument(
+        "--use-regime",
+        action="store_true",
+        help="Apply regime filter to assessment backtest",
+    )
+
+    backtest_batch_parser = subparsers.add_parser(
+        "backtest-batch", help="Run backtests across a universe"
+    )
+    backtest_batch_parser.add_argument(
+        "--universe-path",
+        default=None,
+        help="Universe file path (defaults to config)",
+    )
+    backtest_batch_parser.add_argument(
+        "--symbols",
+        default=None,
+        help="Comma-separated symbols (overrides universe file)",
+    )
+    backtest_batch_parser.add_argument(
+        "--setups",
+        default=None,
+        help="Comma-separated setups (defaults to enabled_setups)",
+    )
+    backtest_batch_parser.add_argument(
+        "--windows",
+        default="30,60,90",
+        help="Comma-separated recent-day windows",
+    )
+    backtest_batch_parser.add_argument(
+        "--risk-multiple",
+        type=float,
+        default=2.0,
+        help="Take profit multiple (R)",
+    )
+    backtest_batch_parser.add_argument(
+        "--time-stop-days",
+        type=int,
+        default=5,
+        help="Max holding days before time stop",
+    )
+    backtest_batch_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory to write backtest CSVs",
+    )
+    backtest_batch_parser.add_argument(
+        "--use-regime",
+        action="store_true",
+        help="Apply regime filter to batch backtests",
+    )
+
+    scan_parser = subparsers.add_parser(
+        "scan", help="Scan universe and write a daily candidate list"
+    )
+    scan_parser.add_argument(
+        "--universe-path",
+        default=None,
+        help="Universe file path (defaults to config)",
+    )
+    scan_parser.add_argument(
+        "--symbols",
+        default=None,
+        help="Comma-separated symbols (overrides universe file)",
+    )
+    scan_parser.add_argument(
+        "--output",
+        default=None,
+        help="Markdown output path (defaults to knowledge/reviews/scan_YYYY-MM-DD.md)",
+    )
+    scan_parser.add_argument(
+        "--include-watch-only",
+        action="store_true",
+        help="Include watch-only symbols in scan",
     )
 
     no_trade_parser = subparsers.add_parser(
@@ -1356,12 +1603,18 @@ def main() -> None:
         handle_backtest(config, args)
     elif args.command == "backtest-summary":
         handle_backtest_summary(config, args)
+    elif args.command == "backtest-rollup":
+        handle_backtest_rollup(config, args)
+    elif args.command == "backtest-batch":
+        handle_backtest_batch(config, args)
     elif args.command == "review-snapshot":
         handle_review_snapshot(config, args)
     elif args.command == "no-trade-summary":
         handle_no_trade_summary(config, args)
     elif args.command == "assess-signal":
         handle_assess_signal(config, args)
+    elif args.command == "scan":
+        handle_scan(config, args)
 
 
 if __name__ == "__main__":

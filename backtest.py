@@ -6,6 +6,7 @@ import os
 import pandas as pd
 
 from alpaca_client import AlpacaClient
+from regime import detect_regime, regime_allows
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,11 @@ def _simulate_trade(
     entry_price = entry_day["open"]
     if setup_name == "MeanReversion_D1":
         stop_price = latest["low"]
+    elif setup_name == "TwoDayBreakout_D1":
+        if signal_index < 2:
+            return None
+        prior_two = df.iloc[signal_index - 2]
+        stop_price = min(prior["low"], prior_two["low"])
     else:
         stop_price = prior["low"]
     if entry_price <= stop_price:
@@ -111,12 +117,17 @@ def run_backtest(
     output_path: str,
     setup_name: str = "PrevDayBreakout_D1",
     recent_days: int | None = None,
+    regime_filter: dict | None = None,
 ) -> BacktestResult:
     if risk_multiple <= 0:
         raise ValueError("risk_multiple must be greater than 0")
     if time_stop_days < 1:
         raise ValueError("time_stop_days must be >= 1")
-    if setup_name not in {"PrevDayBreakout_D1", "MeanReversion_D1"}:
+    if setup_name not in {
+        "PrevDayBreakout_D1",
+        "MeanReversion_D1",
+        "TwoDayBreakout_D1",
+    }:
         raise ValueError(f"Unsupported setup_name: {setup_name}")
 
     output_dir = os.path.dirname(output_path)
@@ -140,8 +151,22 @@ def run_backtest(
     for i in range(1, len(df) - 1):
         prior = df.iloc[i - 1]
         latest = df.iloc[i]
+        if regime_filter and regime_filter.get("enabled", False):
+            regime = detect_regime(
+                df.iloc[: i + 1],
+                fast_sma=regime_filter.get("fast_sma", 20),
+                slow_sma=regime_filter.get("slow_sma", 50),
+            )
+            if not regime_allows(setup_name, regime):
+                continue
         if setup_name == "PrevDayBreakout_D1":
             if latest["close"] <= prior["high"]:
+                continue
+        elif setup_name == "TwoDayBreakout_D1":
+            if i < 2:
+                continue
+            prior_two = df.iloc[i - 2]
+            if latest["close"] <= max(prior["high"], prior_two["high"]):
                 continue
         elif setup_name == "MeanReversion_D1":
             if latest["close"] >= prior["low"]:
@@ -210,6 +235,93 @@ def summarize_backtest(trades_path: str) -> dict:
     return {"yearly": yearly, "monthly": monthly}
 
 
+def write_backtest_rollup(
+    input_glob: str,
+    months: int,
+    output_path: str,
+) -> str:
+    if months < 1:
+        raise ValueError("months must be >= 1")
+    import pathlib
+
+    paths = list(pathlib.Path().glob(input_glob))
+
+    rows = []
+    for path in paths:
+        name = path.name
+        if name == "backtest_trades.csv":
+            continue
+        if name.startswith("backtest_gate_") or name.startswith("backtest_recent_"):
+            continue
+        parts = name.replace("backtest_", "").replace(".csv", "").split("_")
+        if len(parts) < 4:
+            continue
+        symbol = parts[0]
+        setup = f"{parts[1]}_{parts[2]}"
+        window = parts[3]
+        try:
+            df = pd.read_csv(path)
+        except Exception:
+            continue
+        if df.empty or "entry_ts" not in df.columns:
+            continue
+        df["entry_ts"] = pd.to_datetime(df["entry_ts"], utc=True, errors="coerce")
+        df = df[df["entry_ts"].notna()].copy()
+        if df.empty:
+            continue
+        df["symbol"] = symbol
+        df["setup"] = setup
+        df["window"] = window
+        rows.append(df)
+
+    if not rows:
+        raise RuntimeError("No backtest CSVs matched the rollup criteria.")
+
+    data = pd.concat(rows, ignore_index=True)
+    data["month"] = data["entry_ts"].dt.tz_convert(None).dt.to_period("M")
+    max_month = data["month"].max()
+    min_month = max_month - (months - 1)
+    data = data[data["month"] >= min_month]
+
+    grouped = (
+        data.groupby(["month", "symbol", "setup", "window"], as_index=False)
+        .agg(
+            trades=("r_multiple", "count"),
+            win_rate=("outcome", lambda x: (x == "win").mean()),
+            avg_r=("r_multiple", "mean"),
+            median_r=("r_multiple", "median"),
+        )
+        .sort_values(["month", "symbol", "setup", "window"])
+    )
+    grouped["month"] = grouped["month"].astype(str)
+    grouped["win_rate"] = grouped["win_rate"].round(2)
+    grouped["avg_r"] = grouped["avg_r"].round(2)
+    grouped["median_r"] = grouped["median_r"].round(2)
+
+    lines = []
+    lines.append("Monthly backtest rollup")
+    lines.append("")
+    lines.append(f"source_glob: {input_glob}")
+    lines.append(f"months: {months}")
+    lines.append("")
+    lines.append(
+        "| month | symbol | setup | window | trades | win_rate | avg_r | median_r |"
+    )
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    for _, row in grouped.iterrows():
+        lines.append(
+            f"| {row['month']} | {row['symbol']} | {row['setup']} | {row['window']} | "
+            f"{int(row['trades'])} | {row['win_rate']:.2f} | {row['avg_r']:.2f} | {row['median_r']:.2f} |"
+        )
+
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    with open(output_path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines) + "\n")
+    return output_path
+
+
 def run_recent_backtest(
     client: AlpacaClient,
     symbol: str,
@@ -218,6 +330,7 @@ def run_recent_backtest(
     time_stop_days: int,
     output_path: str,
     setup_name: str,
+    regime_filter: dict | None = None,
 ) -> BacktestResult:
     end = pd.Timestamp.now(tz="UTC").date().isoformat()
     start = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=recent_days * 3)).date()
@@ -231,4 +344,5 @@ def run_recent_backtest(
         output_path=output_path,
         setup_name=setup_name,
         recent_days=recent_days,
+        regime_filter=regime_filter,
     )

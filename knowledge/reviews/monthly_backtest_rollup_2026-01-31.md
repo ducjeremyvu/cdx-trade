@@ -1,0 +1,62 @@
+Monthly backtest rollup
+
+source_glob: data/backtest_*_90d.csv
+months: 6
+
+| month | symbol | setup | window | trades | win_rate | avg_r | median_r |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2025-12 | DIA | PrevDayBreakout_D1 | 90d | 6 | 0.50 | 0.37 | -0.08 |
+| 2025-12 | DIA | TwoDayBreakout_D1 | 90d | 5 | 0.40 | -0.25 | -0.39 |
+| 2025-12 | IWM | MeanReversion_D1 | 90d | 3 | 0.33 | 0.00 | -1.00 |
+| 2025-12 | IWM | PrevDayBreakout_D1 | 90d | 1 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | IWM | TwoDayBreakout_D1 | 90d | 1 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | QQQ | MeanReversion_D1 | 90d | 1 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | QQQ | PrevDayBreakout_D1 | 90d | 7 | 0.43 | -0.01 | -0.03 |
+| 2025-12 | QQQ | TwoDayBreakout_D1 | 90d | 7 | 0.43 | -0.17 | -0.02 |
+| 2025-12 | SPY | PrevDayBreakout_D1 | 90d | 7 | 0.29 | -0.37 | -1.00 |
+| 2025-12 | SPY | TwoDayBreakout_D1 | 90d | 7 | 0.29 | -0.53 | -1.00 |
+| 2025-12 | XLB | MeanReversion_D1 | 90d | 3 | 0.33 | 0.00 | -1.00 |
+| 2025-12 | XLE | MeanReversion_D1 | 90d | 4 | 0.75 | 1.25 | 2.00 |
+| 2025-12 | XLE | PrevDayBreakout_D1 | 90d | 3 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | XLE | TwoDayBreakout_D1 | 90d | 3 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | XLF | MeanReversion_D1 | 90d | 2 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | XLF | PrevDayBreakout_D1 | 90d | 2 | 0.00 | -0.62 | -0.62 |
+| 2025-12 | XLF | TwoDayBreakout_D1 | 90d | 2 | 0.00 | -0.59 | -0.59 |
+| 2025-12 | XLI | MeanReversion_D1 | 90d | 3 | 0.67 | 1.00 | 2.00 |
+| 2025-12 | XLI | PrevDayBreakout_D1 | 90d | 3 | 0.33 | -0.31 | -0.23 |
+| 2025-12 | XLI | TwoDayBreakout_D1 | 90d | 2 | 0.00 | -0.59 | -0.59 |
+| 2025-12 | XLK | MeanReversion_D1 | 90d | 4 | 0.25 | -0.30 | -1.00 |
+| 2025-12 | XLK | PrevDayBreakout_D1 | 90d | 1 | 1.00 | 2.00 | 2.00 |
+| 2025-12 | XLK | TwoDayBreakout_D1 | 90d | 1 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | XLP | MeanReversion_D1 | 90d | 3 | 0.00 | -1.00 | -1.00 |
+| 2025-12 | XLP | PrevDayBreakout_D1 | 90d | 6 | 0.33 | -0.25 | -0.86 |
+| 2025-12 | XLP | TwoDayBreakout_D1 | 90d | 4 | 0.25 | -0.59 | -0.76 |
+| 2025-12 | XLRE | MeanReversion_D1 | 90d | 6 | 0.67 | 0.85 | 1.56 |
+| 2025-12 | XLU | MeanReversion_D1 | 90d | 8 | 0.25 | -0.25 | -1.00 |
+| 2025-12 | XLV | PrevDayBreakout_D1 | 90d | 4 | 0.25 | -0.74 | -1.00 |
+| 2025-12 | XLV | TwoDayBreakout_D1 | 90d | 4 | 0.25 | -0.54 | -0.60 |
+| 2025-12 | XLY | MeanReversion_D1 | 90d | 3 | 0.33 | -0.61 | -1.00 |
+| 2026-01 | DIA | PrevDayBreakout_D1 | 90d | 9 | 0.33 | -0.12 | -0.33 |
+| 2026-01 | DIA | TwoDayBreakout_D1 | 90d | 4 | 0.25 | -0.20 | -0.21 |
+| 2026-01 | IWM | PrevDayBreakout_D1 | 90d | 9 | 0.67 | 0.74 | 1.07 |
+| 2026-01 | IWM | TwoDayBreakout_D1 | 90d | 8 | 0.62 | 0.37 | 0.61 |
+| 2026-01 | QQQ | PrevDayBreakout_D1 | 90d | 9 | 0.44 | -0.11 | -1.00 |
+| 2026-01 | QQQ | TwoDayBreakout_D1 | 90d | 7 | 0.29 | -0.39 | -0.65 |
+| 2026-01 | SPY | PrevDayBreakout_D1 | 90d | 8 | 0.50 | -0.23 | -0.37 |
+| 2026-01 | SPY | TwoDayBreakout_D1 | 90d | 6 | 0.50 | -0.24 | -0.44 |
+| 2026-01 | XLB | MeanReversion_D1 | 90d | 3 | 0.33 | 0.00 | -1.00 |
+| 2026-01 | XLE | MeanReversion_D1 | 90d | 4 | 0.50 | 0.50 | 0.50 |
+| 2026-01 | XLF | PrevDayBreakout_D1 | 90d | 3 | 0.33 | -0.46 | -0.46 |
+| 2026-01 | XLF | TwoDayBreakout_D1 | 90d | 2 | 0.50 | -0.19 | -0.19 |
+| 2026-01 | XLI | PrevDayBreakout_D1 | 90d | 10 | 0.60 | 0.34 | 0.38 |
+| 2026-01 | XLI | TwoDayBreakout_D1 | 90d | 8 | 0.62 | 0.32 | 0.30 |
+| 2026-01 | XLK | MeanReversion_D1 | 90d | 5 | 0.40 | 0.20 | -1.00 |
+| 2026-01 | XLP | PrevDayBreakout_D1 | 90d | 8 | 0.75 | 0.45 | 0.79 |
+| 2026-01 | XLP | TwoDayBreakout_D1 | 90d | 7 | 1.00 | 0.65 | 0.50 |
+| 2026-01 | XLRE | MeanReversion_D1 | 90d | 2 | 0.00 | -1.00 | -1.00 |
+| 2026-01 | XLRE | PrevDayBreakout_D1 | 90d | 1 | 1.00 | 0.28 | 0.28 |
+| 2026-01 | XLRE | TwoDayBreakout_D1 | 90d | 1 | 1.00 | 0.28 | 0.28 |
+| 2026-01 | XLU | MeanReversion_D1 | 90d | 3 | 0.67 | 1.00 | 2.00 |
+| 2026-01 | XLV | PrevDayBreakout_D1 | 90d | 4 | 0.00 | -0.62 | -0.57 |
+| 2026-01 | XLV | TwoDayBreakout_D1 | 90d | 4 | 0.00 | -0.59 | -0.57 |
+| 2026-01 | XLY | MeanReversion_D1 | 90d | 6 | 0.50 | 0.17 | -0.48 |

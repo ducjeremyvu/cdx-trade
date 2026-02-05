@@ -1,0 +1,5 @@
+symbol,setup_name,signal_ts,entry_ts,entry_price,stop_price,target_price,exit_ts,exit_price,exit_reason,r_multiple,outcome
+XLF,TwoDayBreakout_D1,2025-12-22T00:00:00-05:00,2025-12-23T00:00:00-05:00,55.37,54.355,57.4,2025-12-30T00:00:00-05:00,55.185,time stop loss,-0.1823,loss
+XLF,TwoDayBreakout_D1,2025-12-24T00:00:00-05:00,2025-12-26T00:00:00-05:00,55.745,54.74,57.755,2026-01-02T00:00:00-05:00,54.74,SL hit,-1.0,loss
+XLF,TwoDayBreakout_D1,2026-01-05T00:00:00-05:00,2026-01-06T00:00:00-05:00,56.065,54.34,59.515,2026-01-12T00:00:00-05:00,55.275,time stop loss,-0.458,loss
+XLF,TwoDayBreakout_D1,2026-01-29T00:00:00-05:00,2026-01-30T00:00:00-05:00,53.405,52.76,54.695,2026-01-30T00:00:00-05:00,53.46,time stop win,0.0853,win
