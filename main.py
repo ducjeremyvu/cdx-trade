@@ -8,6 +8,7 @@ import pandas as pd
 
 from alpaca_client import AlpacaClient
 from backtest import (
+    BacktestResult,
     run_backtest,
     summarize_backtest,
     run_recent_backtest,
@@ -896,6 +897,153 @@ def handle_assess_signal(config: AppConfig, args: argparse.Namespace) -> None:
     print(f"best_r: {result.best_r:.2f}")
     print(f"worst_r: {result.worst_r:.2f}")
 
+
+def _loss_streak(outcomes: list[str]) -> int:
+    streak = 0
+    for outcome in reversed(outcomes):
+        if outcome != "loss":
+            break
+        streak += 1
+    return streak
+
+
+def handle_assess_multi(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    rows = list_signal_queue(config.signal_queue_path, status="pending")
+    match = next((row for row in rows if row["signal_id"] == args.signal_id), None)
+    if not match:
+        raise RuntimeError("Signal not found or not pending.")
+
+    symbol = match["symbol"]
+    setup_name = match["setup_name"]
+    windows = [int(value) for value in args.windows.split(",") if value.strip()]
+    if not windows:
+        raise ValueError("No valid windows provided.")
+
+    results: dict[int, BacktestResult] = {}
+    for window in windows:
+        output_path = os.path.join(
+            args.output_dir,
+            f"backtest_assess_{symbol}_{setup_name}_{window}d.csv",
+        )
+        result = run_recent_backtest(
+            client=client,
+            symbol=symbol,
+            recent_days=window,
+            risk_multiple=args.risk_multiple,
+            time_stop_days=args.time_stop_days,
+            output_path=output_path,
+            setup_name=setup_name,
+            regime_filter=_regime_filter(config) if args.use_regime else None,
+        )
+        results[window] = result
+
+    def _metric(window: int, name: str, default: float = 0.0) -> float:
+        result = results.get(window)
+        if not result:
+            return default
+        return float(getattr(result, name))
+
+    trades_30 = int(_metric(30, "total_trades", 0))
+    trades_90 = int(_metric(90, "total_trades", 0))
+    trades_180 = int(_metric(180, "total_trades", 0))
+    avg_r_30 = _metric(30, "avg_r")
+    avg_r_90 = _metric(90, "avg_r")
+    avg_r_180 = _metric(180, "avg_r")
+    median_r_180 = _metric(180, "median_r")
+
+    avg_r_floor = max(args.avg_r_floor, 0.01)
+    hot_ratio = avg_r_30 / max(avg_r_180, avg_r_floor)
+
+    approve = (
+        trades_90 >= args.min_trades_90
+        and trades_180 >= args.min_trades_180
+        and avg_r_180 >= args.min_avg_r_180
+        and median_r_180 >= args.min_median_r_180
+        and hot_ratio <= args.max_hot_ratio
+    )
+
+    hot_only = (
+        trades_30 >= args.min_trades_30
+        and avg_r_30 >= args.min_avg_r_30
+        and (avg_r_90 < args.min_avg_r_90 or avg_r_180 < args.min_avg_r_180)
+    )
+
+    hot_kill_triggered = False
+    loss_streak = 0
+    if hot_only and 30 in results:
+        trades_df = pd.read_csv(results[30].trades_path)
+        if not trades_df.empty and "entry_ts" in trades_df.columns:
+            trades_df["entry_ts"] = pd.to_datetime(
+                trades_df["entry_ts"], utc=True, errors="coerce"
+            )
+            trades_df = trades_df[trades_df["entry_ts"].notna()].copy()
+            trades_df = trades_df.sort_values("entry_ts")
+        outcomes = trades_df["outcome"].tolist() if not trades_df.empty else []
+        loss_streak = _loss_streak(outcomes)
+        hot_kill_triggered = loss_streak >= args.hot_kill_streak
+
+    if approve:
+        recommendation = "approve"
+    elif hot_only and not hot_kill_triggered:
+        recommendation = "hot-only"
+    else:
+        recommendation = "reject"
+
+    today = date_cls.today().isoformat()
+    output_path = args.output or (
+        f"knowledge/reviews/assess_multi_{today}_{symbol}_{setup_name}.md"
+    )
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    lines: list[str] = []
+    lines.append(f"Assess multi ({today})")
+    lines.append("")
+    lines.append(f"signal_id: {match['signal_id']}")
+    lines.append(f"symbol: {symbol}")
+    lines.append(f"setup: {setup_name}")
+    lines.append("")
+    lines.append("windows:")
+    for window in sorted(results.keys()):
+        result = results[window]
+        lines.append(
+            f"- {window}d: trades={result.total_trades} "
+            f"win_rate={result.win_rate:.2f} avg_r={result.avg_r:.2f} "
+            f"median_r={result.median_r:.2f} best_r={result.best_r:.2f} "
+            f"worst_r={result.worst_r:.2f} trades_path={result.trades_path}"
+        )
+    lines.append("")
+    lines.append("thresholds:")
+    lines.append(
+        f"- min_trades_30={args.min_trades_30} min_trades_90={args.min_trades_90} "
+        f"min_trades_180={args.min_trades_180}"
+    )
+    lines.append(
+        f"- min_avg_r_30={args.min_avg_r_30:.2f} min_avg_r_90={args.min_avg_r_90:.2f} "
+        f"min_avg_r_180={args.min_avg_r_180:.2f}"
+    )
+    lines.append(f"- min_median_r_180={args.min_median_r_180:.2f}")
+    lines.append(f"- max_hot_ratio={args.max_hot_ratio:.2f} avg_r_floor={avg_r_floor:.2f}")
+    lines.append("")
+    lines.append("derived:")
+    lines.append(f"- avg_r_30={avg_r_30:.2f} avg_r_90={avg_r_90:.2f} avg_r_180={avg_r_180:.2f}")
+    lines.append(f"- median_r_180={median_r_180:.2f}")
+    lines.append(f"- hot_ratio={hot_ratio:.2f}")
+    lines.append(f"- loss_streak_30d={loss_streak}")
+    lines.append(f"- hot_kill_streak={args.hot_kill_streak}")
+    lines.append("")
+    lines.append(f"recommendation: {recommendation}")
+    lines.append(f"hot_only_max_allocation: {args.hot_max_allocation:.0%}")
+    lines.append("")
+
+    with open(output_path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines) + "\n")
+
+    print(f"recommendation: {recommendation}")
+    print(f"wrote_assess_multi: {output_path}")
+
 def handle_review_snapshot(config: AppConfig, args: argparse.Namespace) -> None:
     path = write_weekly_snapshot(
         config.journal_path,
@@ -1472,6 +1620,110 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply regime filter to assessment backtest",
     )
 
+    assess_multi_parser = subparsers.add_parser(
+        "assess-multi",
+        help="Assess a queued signal across multiple windows with a recommendation",
+    )
+    assess_multi_parser.add_argument("--signal-id", required=True, help="Signal ID")
+    assess_multi_parser.add_argument(
+        "--windows",
+        default="30,90,180",
+        help="Comma-separated recent trading days to assess",
+    )
+    assess_multi_parser.add_argument(
+        "--risk-multiple",
+        type=float,
+        default=2.0,
+        help="Take profit multiple (R)",
+    )
+    assess_multi_parser.add_argument(
+        "--time-stop-days",
+        type=int,
+        default=5,
+        help="Max holding days before time stop",
+    )
+    assess_multi_parser.add_argument(
+        "--output-dir",
+        default="data",
+        help="Directory for assessment CSV outputs",
+    )
+    assess_multi_parser.add_argument(
+        "--output",
+        default=None,
+        help="Markdown output path (optional)",
+    )
+    assess_multi_parser.add_argument(
+        "--use-regime",
+        action="store_true",
+        help="Apply regime filter to assessment backtests",
+    )
+    assess_multi_parser.add_argument(
+        "--min-trades-30",
+        type=int,
+        default=5,
+        help="Minimum trades in 30d window for hot-only",
+    )
+    assess_multi_parser.add_argument(
+        "--min-trades-90",
+        type=int,
+        default=8,
+        help="Minimum trades in 90d window to approve",
+    )
+    assess_multi_parser.add_argument(
+        "--min-trades-180",
+        type=int,
+        default=20,
+        help="Minimum trades in 180d window to approve",
+    )
+    assess_multi_parser.add_argument(
+        "--min-avg-r-30",
+        type=float,
+        default=0.30,
+        help="Minimum avg R in 30d window for hot-only",
+    )
+    assess_multi_parser.add_argument(
+        "--min-avg-r-90",
+        type=float,
+        default=0.10,
+        help="Minimum avg R in 90d window",
+    )
+    assess_multi_parser.add_argument(
+        "--min-avg-r-180",
+        type=float,
+        default=0.10,
+        help="Minimum avg R in 180d window to approve",
+    )
+    assess_multi_parser.add_argument(
+        "--min-median-r-180",
+        type=float,
+        default=0.0,
+        help="Minimum median R in 180d window to approve",
+    )
+    assess_multi_parser.add_argument(
+        "--max-hot-ratio",
+        type=float,
+        default=2.0,
+        help="Maximum avg_r_30 / avg_r_180 ratio before flagging fading",
+    )
+    assess_multi_parser.add_argument(
+        "--avg-r-floor",
+        type=float,
+        default=0.05,
+        help="Floor for avg_r_180 in hot ratio calculation",
+    )
+    assess_multi_parser.add_argument(
+        "--hot-kill-streak",
+        type=int,
+        default=3,
+        help="Consecutive losses to trigger hot-only pause",
+    )
+    assess_multi_parser.add_argument(
+        "--hot-max-allocation",
+        type=float,
+        default=0.2,
+        help="Max allocation for hot-only signals (for reporting)",
+    )
+
     backtest_batch_parser = subparsers.add_parser(
         "backtest-batch", help="Run backtests across a universe"
     )
@@ -1613,6 +1865,8 @@ def main() -> None:
         handle_no_trade_summary(config, args)
     elif args.command == "assess-signal":
         handle_assess_signal(config, args)
+    elif args.command == "assess-multi":
+        handle_assess_multi(config, args)
     elif args.command == "scan":
         handle_scan(config, args)
 
