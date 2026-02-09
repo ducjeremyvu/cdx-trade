@@ -44,7 +44,7 @@ class AlpacaClient:
         self,
         symbol: str,
         side: str,
-        qty: int,
+        qty: float,
         order_type: str = "market",
         limit_price: float | None = None,
     ) -> AlpacaOrderResult:

@@ -1,4 +1,5 @@
 import argparse
+import csv
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -704,7 +705,7 @@ def handle_approve_signal(config: AppConfig, args: argparse.Namespace) -> None:
     limit_price = match.get("limit_price") or None
     if limit_price is not None:
         limit_price = float(limit_price)
-    qty = int(match.get("qty") or config.fixed_position_size)
+    qty = float(match.get("qty") or config.fixed_position_size)
     idea = {
         "symbol": match["symbol"],
         "direction": match["direction"],
@@ -907,6 +908,63 @@ def _loss_streak(outcomes: list[str]) -> int:
     return streak
 
 
+def _load_hot_only_state(path: str) -> dict[tuple[str, str], dict]:
+    state: dict[tuple[str, str], dict] = {}
+    if not os.path.exists(path):
+        return state
+    with open(path, "r", newline="", encoding="utf-8") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            symbol = row.get("symbol", "").upper()
+            setup_name = row.get("setup_name", "")
+            if not symbol or not setup_name:
+                continue
+            state[(symbol, setup_name)] = row
+    return state
+
+
+def _save_hot_only_state(path: str, state: dict[tuple[str, str], dict]) -> None:
+    dir_name = os.path.dirname(path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+    fieldnames = [
+        "symbol",
+        "setup_name",
+        "paused",
+        "pause_reason",
+        "paused_ts",
+        "close_count_at_pause",
+        "reactivated_ts",
+        "updated_ts",
+    ]
+    rows = [state[key] for key in sorted(state.keys())]
+    with open(path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _closed_trade_outcomes(
+    journal_path: str,
+    symbol: str,
+    setup_name: str,
+) -> list[str]:
+    rows = list(read_rows(journal_path))
+    filtered = []
+    for row in rows:
+        if row.get("symbol", "").upper() != symbol.upper():
+            continue
+        if row.get("setup_name", "") != setup_name:
+            continue
+        outcome = row.get("outcome", "").strip()
+        if not outcome:
+            continue
+        ts = row.get("exit_ts", "") or row.get("entry_ts", "")
+        filtered.append((ts, outcome))
+    filtered.sort(key=lambda value: value[0])
+    return [value[1] for value in filtered]
+
+
 def handle_assess_multi(config: AppConfig, args: argparse.Namespace) -> None:
     client = AlpacaClient(config)
     rows = list_signal_queue(config.signal_queue_path, status="pending")
@@ -969,26 +1027,74 @@ def handle_assess_multi(config: AppConfig, args: argparse.Namespace) -> None:
         and (avg_r_90 < args.min_avg_r_90 or avg_r_180 < args.min_avg_r_180)
     )
 
-    hot_kill_triggered = False
-    loss_streak = 0
-    if hot_only and 30 in results:
-        trades_df = pd.read_csv(results[30].trades_path)
-        if not trades_df.empty and "entry_ts" in trades_df.columns:
-            trades_df["entry_ts"] = pd.to_datetime(
-                trades_df["entry_ts"], utc=True, errors="coerce"
+    state_key = (symbol.upper(), setup_name)
+    hot_state = _load_hot_only_state(args.state_path)
+    state_row = hot_state.get(
+        state_key,
+        {
+            "symbol": symbol.upper(),
+            "setup_name": setup_name,
+            "paused": "false",
+            "pause_reason": "",
+            "paused_ts": "",
+            "close_count_at_pause": "0",
+            "reactivated_ts": "",
+            "updated_ts": "",
+        },
+    )
+
+    executed_outcomes = _closed_trade_outcomes(config.journal_path, symbol, setup_name)
+    executed_count = len(executed_outcomes)
+    loss_streak = _loss_streak(executed_outcomes)
+    recent_outcomes = executed_outcomes[-args.hot_pause_lookback :]
+    recent_losses = sum(1 for value in recent_outcomes if value == "loss")
+
+    is_paused = state_row.get("paused", "false").lower() == "true"
+    close_count_at_pause = int(state_row.get("close_count_at_pause", "0") or "0")
+    closed_since_pause = max(0, executed_count - close_count_at_pause)
+    pause_reason = state_row.get("pause_reason", "")
+
+    now_ts = datetime.now(timezone.utc).isoformat()
+    if hot_only:
+        hit_streak = loss_streak >= args.hot_kill_streak
+        hit_window = recent_losses >= args.hot_pause_losses
+        if (not is_paused) and (hit_streak or hit_window):
+            is_paused = True
+            close_count_at_pause = executed_count
+            pause_reason = (
+                f"paused: loss_streak={loss_streak} recent_losses="
+                f"{recent_losses}/{args.hot_pause_lookback}"
             )
-            trades_df = trades_df[trades_df["entry_ts"].notna()].copy()
-            trades_df = trades_df.sort_values("entry_ts")
-        outcomes = trades_df["outcome"].tolist() if not trades_df.empty else []
-        loss_streak = _loss_streak(outcomes)
-        hot_kill_triggered = loss_streak >= args.hot_kill_streak
+            state_row["paused_ts"] = now_ts
+
+        if is_paused:
+            can_reactivate = (
+                closed_since_pause >= args.hot_reactivate_min_trades
+                and trades_30 >= args.min_trades_30
+                and avg_r_30 >= args.hot_reactivate_min_avg_r_30
+            )
+            if can_reactivate:
+                is_paused = False
+                pause_reason = "reactivated by 30d strength + new trade sample"
+                state_row["reactivated_ts"] = now_ts
+    elif approve:
+        # If the setup graduates to stable approve, clear hot-only pause.
+        is_paused = False
+        pause_reason = "cleared by stable approve recommendation"
 
     if approve:
         recommendation = "approve"
-    elif hot_only and not hot_kill_triggered:
+    elif hot_only and not is_paused:
         recommendation = "hot-only"
     else:
         recommendation = "reject"
+
+    state_row["paused"] = "true" if is_paused else "false"
+    state_row["pause_reason"] = pause_reason
+    state_row["close_count_at_pause"] = str(close_count_at_pause)
+    state_row["updated_ts"] = now_ts
+    hot_state[state_key] = state_row
+    _save_hot_only_state(args.state_path, hot_state)
 
     today = date_cls.today().isoformat()
     output_path = args.output or (
@@ -1031,8 +1137,17 @@ def handle_assess_multi(config: AppConfig, args: argparse.Namespace) -> None:
     lines.append(f"- avg_r_30={avg_r_30:.2f} avg_r_90={avg_r_90:.2f} avg_r_180={avg_r_180:.2f}")
     lines.append(f"- median_r_180={median_r_180:.2f}")
     lines.append(f"- hot_ratio={hot_ratio:.2f}")
-    lines.append(f"- loss_streak_30d={loss_streak}")
-    lines.append(f"- hot_kill_streak={args.hot_kill_streak}")
+    lines.append(f"- executed_trades={executed_count}")
+    lines.append(f"- executed_loss_streak={loss_streak}")
+    lines.append(
+        f"- recent_losses={recent_losses}/{args.hot_pause_lookback} "
+        f"pause_threshold={args.hot_pause_losses}"
+    )
+    lines.append(f"- closed_since_pause={closed_since_pause}")
+    lines.append(f"- hot_pause_streak={args.hot_kill_streak}")
+    lines.append(f"- hot_state_path={args.state_path}")
+    lines.append(f"- hot_paused={str(is_paused).lower()}")
+    lines.append(f"- hot_pause_reason={pause_reason or 'none'}")
     lines.append("")
     lines.append(f"recommendation: {recommendation}")
     lines.append(f"hot_only_max_allocation: {args.hot_max_allocation:.0%}")
@@ -1714,8 +1829,37 @@ def build_parser() -> argparse.ArgumentParser:
     assess_multi_parser.add_argument(
         "--hot-kill-streak",
         type=int,
-        default=3,
+        default=2,
         help="Consecutive losses to trigger hot-only pause",
+    )
+    assess_multi_parser.add_argument(
+        "--hot-pause-losses",
+        type=int,
+        default=3,
+        help="Losses in the recent lookback to trigger hot-only pause",
+    )
+    assess_multi_parser.add_argument(
+        "--hot-pause-lookback",
+        type=int,
+        default=4,
+        help="Recent trade count used by hot-only loss window",
+    )
+    assess_multi_parser.add_argument(
+        "--hot-reactivate-min-trades",
+        type=int,
+        default=6,
+        help="Closed trades after pause required before hot-only reactivation",
+    )
+    assess_multi_parser.add_argument(
+        "--hot-reactivate-min-avg-r-30",
+        type=float,
+        default=0.30,
+        help="Minimum 30d avg R required for hot-only reactivation",
+    )
+    assess_multi_parser.add_argument(
+        "--state-path",
+        default="data/hot_only_state.csv",
+        help="Path for persisted hot-only pause/reactivation state",
     )
     assess_multi_parser.add_argument(
         "--hot-max-allocation",

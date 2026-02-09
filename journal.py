@@ -445,7 +445,7 @@ def enqueue_signal(
     idea: dict,
     order_type: str,
     limit_price: float | None,
-    qty: int,
+    qty: float,
 ) -> str:
     signal_id = str(uuid4())
     row = {

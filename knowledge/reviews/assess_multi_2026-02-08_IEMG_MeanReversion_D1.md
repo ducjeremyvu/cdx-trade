@@ -19,8 +19,14 @@ derived:
 - avg_r_30=1.23 avg_r_90=0.36 avg_r_180=0.21
 - median_r_180=-0.07
 - hot_ratio=5.89
-- loss_streak_30d=0
-- hot_kill_streak=3
+- executed_trades=0
+- executed_loss_streak=0
+- recent_losses=0/4 pause_threshold=3
+- closed_since_pause=0
+- hot_pause_streak=2
+- hot_state_path=data/hot_only_state.csv
+- hot_paused=false
+- hot_pause_reason=none
 
 recommendation: reject
 hot_only_max_allocation: 20%
