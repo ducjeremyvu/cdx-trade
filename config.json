@@ -71,6 +71,14 @@
   "backtest_gate_min_avg_r": 0.1,
   "backtest_gate_min_win_rate": 0.48,
   "max_open_positions": 1,
+  "max_capital_usd": 1000,
+  "max_total_open_risk_usd": 20,
+  "monthly_ai_cost_usd": 20,
+  "monthly_ops_cost_usd": 0,
+  "target_net_usd": 30,
+  "projected_monthly_gross_usd": 0,
+  "economics_risk_per_trade_usd": 10,
+  "economics_projection_window_days": 90,
   "watch_only_symbols": [
     "SPY"
   ],

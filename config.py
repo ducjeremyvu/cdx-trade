@@ -30,6 +30,14 @@ class AppConfig:
     regime_fast_sma: int
     regime_slow_sma: int
     allowlist_only: bool
+    max_capital_usd: float
+    max_total_open_risk_usd: float
+    monthly_ai_cost_usd: float
+    monthly_ops_cost_usd: float
+    target_net_usd: float
+    projected_monthly_gross_usd: float
+    economics_risk_per_trade_usd: float
+    economics_projection_window_days: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -149,6 +157,54 @@ class AppConfig:
                 str(config_data.get("max_open_positions", 1)),
             )
         )
+        max_capital_usd = float(
+            os.getenv(
+                "MAX_CAPITAL_USD",
+                str(config_data.get("max_capital_usd", 0)),
+            )
+        )
+        max_total_open_risk_usd = float(
+            os.getenv(
+                "MAX_TOTAL_OPEN_RISK_USD",
+                str(config_data.get("max_total_open_risk_usd", 0)),
+            )
+        )
+        monthly_ai_cost_usd = float(
+            os.getenv(
+                "MONTHLY_AI_COST_USD",
+                str(config_data.get("monthly_ai_cost_usd", 0)),
+            )
+        )
+        monthly_ops_cost_usd = float(
+            os.getenv(
+                "MONTHLY_OPS_COST_USD",
+                str(config_data.get("monthly_ops_cost_usd", 0)),
+            )
+        )
+        target_net_usd = float(
+            os.getenv(
+                "TARGET_NET_USD",
+                str(config_data.get("target_net_usd", 0)),
+            )
+        )
+        projected_monthly_gross_usd = float(
+            os.getenv(
+                "PROJECTED_MONTHLY_GROSS_USD",
+                str(config_data.get("projected_monthly_gross_usd", 0)),
+            )
+        )
+        economics_risk_per_trade_usd = float(
+            os.getenv(
+                "ECONOMICS_RISK_PER_TRADE_USD",
+                str(config_data.get("economics_risk_per_trade_usd", 10)),
+            )
+        )
+        economics_projection_window_days = int(
+            os.getenv(
+                "ECONOMICS_PROJECTION_WINDOW_DAYS",
+                str(config_data.get("economics_projection_window_days", 90)),
+            )
+        )
         watch_only_symbols_raw = os.getenv("WATCH_ONLY_SYMBOLS", "").strip()
         if watch_only_symbols_raw:
             watch_only_symbols = [
@@ -205,6 +261,14 @@ class AppConfig:
             backtest_gate_min_avg_r=backtest_gate_min_avg_r,
             backtest_gate_min_win_rate=backtest_gate_min_win_rate,
             max_open_positions=max_open_positions,
+            max_capital_usd=max_capital_usd,
+            max_total_open_risk_usd=max_total_open_risk_usd,
+            monthly_ai_cost_usd=monthly_ai_cost_usd,
+            monthly_ops_cost_usd=monthly_ops_cost_usd,
+            target_net_usd=target_net_usd,
+            projected_monthly_gross_usd=projected_monthly_gross_usd,
+            economics_risk_per_trade_usd=economics_risk_per_trade_usd,
+            economics_projection_window_days=economics_projection_window_days,
             watch_only_symbols=watch_only_symbols,
             universe_path=universe_path,
             regime_filter_enabled=regime_filter_enabled,

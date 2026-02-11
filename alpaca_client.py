@@ -101,6 +101,9 @@ class AlpacaClient:
     def close_position(self, symbol: str):
         return self._trading.close_position(symbol)
 
+    def list_open_positions(self):
+        return self._trading.get_all_positions()
+
     def get_recent_daily_bars(self, symbol: str, days: int = 10):
         end = datetime.now(timezone.utc)
         start = end - timedelta(days=days)

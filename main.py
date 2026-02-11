@@ -1,6 +1,7 @@
 import argparse
 import csv
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from datetime import date as date_cls
@@ -147,6 +148,162 @@ def _passes_backtest_gate(
     return True, ""
 
 
+def _latest_close_price(client: AlpacaClient, symbol: str) -> float:
+    bars = client.get_recent_daily_bars(symbol, days=5)
+    if bars is None or bars.empty:
+        raise RuntimeError(f"No recent bars available for {symbol}")
+    df = bars.reset_index()
+    df = df.sort_values("timestamp")
+    return float(df.iloc[-1]["close"])
+
+
+def _open_exposure_usd(client: AlpacaClient) -> float:
+    total = 0.0
+    for position in client.list_open_positions():
+        market_value = getattr(position, "market_value", None)
+        if market_value not in (None, ""):
+            total += abs(float(market_value))
+            continue
+        qty = float(getattr(position, "qty", 0) or 0)
+        current_price = float(getattr(position, "current_price", 0) or 0)
+        total += abs(qty * current_price)
+    return total
+
+
+def _capital_guard(
+    client: AlpacaClient,
+    config: AppConfig,
+    symbol: str,
+    qty: float,
+    order_type: str,
+    limit_price: float | None,
+) -> tuple[bool, str]:
+    if config.max_capital_usd <= 0:
+        return True, ""
+    if qty <= 0:
+        return False, f"qty must be > 0, got {qty}"
+    order_price = (
+        float(limit_price)
+        if order_type == "limit" and limit_price is not None
+        else _latest_close_price(client, symbol)
+    )
+    order_notional = abs(qty * order_price)
+    open_exposure = _open_exposure_usd(client)
+    projected = open_exposure + order_notional
+    if projected > config.max_capital_usd:
+        return (
+            False,
+            (
+                f"projected exposure ${projected:.2f} exceeds cap "
+                f"${config.max_capital_usd:.2f} "
+                f"(open=${open_exposure:.2f}, new=${order_notional:.2f})"
+            ),
+        )
+    return True, (
+        f"within cap: projected=${projected:.2f} "
+        f"(open=${open_exposure:.2f}, new=${order_notional:.2f}, "
+        f"cap=${config.max_capital_usd:.2f})"
+    )
+
+
+def _extract_stop_price(stop_loss_logic: str) -> float | None:
+    if not stop_loss_logic:
+        return None
+    match = re.search(r"\(([-+]?[0-9]*\.?[0-9]+)\)", stop_loss_logic)
+    if not match:
+        return None
+    return float(match.group(1))
+
+
+def _open_position_map(client: AlpacaClient) -> dict[str, dict]:
+    positions = {}
+    for position in client.list_open_positions():
+        symbol = getattr(position, "symbol", "").upper()
+        if not symbol:
+            continue
+        qty = abs(float(getattr(position, "qty", 0) or 0))
+        avg_entry_price = float(getattr(position, "avg_entry_price", 0) or 0)
+        positions[symbol] = {
+            "qty": qty,
+            "avg_entry_price": avg_entry_price,
+        }
+    return positions
+
+
+def _open_risk_to_stops_usd(client: AlpacaClient, journal_path: str) -> float:
+    rows = list(read_rows(journal_path))
+    open_rows = [row for row in rows if not row.get("exit_ts")]
+    positions = _open_position_map(client)
+    total_risk = 0.0
+    for row in open_rows:
+        symbol = row.get("symbol", "").upper()
+        direction = row.get("direction", "long")
+        stop_price = _extract_stop_price(row.get("stop_loss_logic", ""))
+        position = positions.get(symbol)
+        if not position or stop_price is None:
+            continue
+        entry_price = position["avg_entry_price"]
+        qty = position["qty"]
+        if direction == "long":
+            risk = max(0.0, entry_price - stop_price) * qty
+        else:
+            risk = max(0.0, stop_price - entry_price) * qty
+        total_risk += risk
+    return total_risk
+
+
+def _estimate_entry_price(
+    client: AlpacaClient,
+    symbol: str,
+    order_type: str,
+    limit_price: float | None,
+) -> float:
+    if order_type == "limit" and limit_price is not None:
+        return float(limit_price)
+    return _latest_close_price(client, symbol)
+
+
+def _risk_guard(
+    client: AlpacaClient,
+    config: AppConfig,
+    symbol: str,
+    direction: str,
+    stop_loss_logic: str,
+    qty: float,
+    order_type: str,
+    limit_price: float | None,
+) -> tuple[bool, str]:
+    if config.max_total_open_risk_usd <= 0:
+        return True, ""
+    if qty <= 0:
+        return False, f"qty must be > 0, got {qty}"
+    stop_price = _extract_stop_price(stop_loss_logic)
+    if stop_price is None:
+        return False, "could not parse stop price from stop_loss_logic"
+    entry_price = _estimate_entry_price(client, symbol, order_type, limit_price)
+    if direction == "long":
+        risk_per_unit = max(0.0, entry_price - stop_price)
+    else:
+        risk_per_unit = max(0.0, stop_price - entry_price)
+    new_order_risk = risk_per_unit * abs(qty)
+    open_risk = _open_risk_to_stops_usd(client, config.journal_path)
+    projected_risk = open_risk + new_order_risk
+    if projected_risk > config.max_total_open_risk_usd:
+        return (
+            False,
+            (
+                f"projected risk ${projected_risk:.2f} exceeds cap "
+                f"${config.max_total_open_risk_usd:.2f} "
+                f"(open=${open_risk:.2f}, new=${new_order_risk:.2f})"
+            ),
+        )
+    return True, (
+        f"within risk cap: projected=${projected_risk:.2f} "
+        f"(open=${open_risk:.2f}, new=${new_order_risk:.2f}, "
+        f"cap=${config.max_total_open_risk_usd:.2f})"
+    )
+
+
 def evaluate_and_trade(
     client: AlpacaClient,
     config: AppConfig,
@@ -214,6 +371,47 @@ def evaluate_and_trade(
             notes=notes,
         )
         print(f"Backtest gate failed. Logged no-trade: log_id={log_id}")
+        return None
+
+    cap_allowed, cap_message = _capital_guard(
+        client=client,
+        config=config,
+        symbol=idea["symbol"],
+        qty=float(config.fixed_position_size),
+        order_type=order_type,
+        limit_price=limit_price,
+    )
+    if not cap_allowed:
+        log_id = log_no_trade(
+            config.no_trade_journal_path,
+            symbol=symbol,
+            reason="Capital cap exceeded",
+            market_context=no_trade_context,
+            emotional_state=no_trade_emotion,
+            notes=cap_message,
+        )
+        print(f"Capital cap exceeded. Logged no-trade: log_id={log_id}")
+        return None
+    risk_allowed, risk_message = _risk_guard(
+        client=client,
+        config=config,
+        symbol=idea["symbol"],
+        direction=idea["direction"],
+        stop_loss_logic=idea["stop_loss_logic"],
+        qty=float(config.fixed_position_size),
+        order_type=order_type,
+        limit_price=limit_price,
+    )
+    if not risk_allowed:
+        log_id = log_no_trade(
+            config.no_trade_journal_path,
+            symbol=symbol,
+            reason="Risk cap exceeded",
+            market_context=no_trade_context,
+            emotional_state=no_trade_emotion,
+            notes=risk_message,
+        )
+        print(f"Risk cap exceeded. Logged no-trade: log_id={log_id}")
         return None
 
     order = client.place_order(
@@ -706,6 +904,48 @@ def handle_approve_signal(config: AppConfig, args: argparse.Namespace) -> None:
     if limit_price is not None:
         limit_price = float(limit_price)
     qty = float(match.get("qty") or config.fixed_position_size)
+    cap_allowed, cap_message = _capital_guard(
+        client=client,
+        config=config,
+        symbol=match["symbol"],
+        qty=qty,
+        order_type=order_type,
+        limit_price=limit_price,
+    )
+    if not cap_allowed:
+        update_signal_status(
+            config.signal_queue_path,
+            signal_id=args.signal_id,
+            status="ignored",
+            decision_reason=cap_message,
+        )
+        print(
+            f"Signal ignored due to capital cap: signal_id={args.signal_id} "
+            f"reason={cap_message}"
+        )
+        return
+    risk_allowed, risk_message = _risk_guard(
+        client=client,
+        config=config,
+        symbol=match["symbol"],
+        direction=match["direction"],
+        stop_loss_logic=match["stop_loss_logic"],
+        qty=qty,
+        order_type=order_type,
+        limit_price=limit_price,
+    )
+    if not risk_allowed:
+        update_signal_status(
+            config.signal_queue_path,
+            signal_id=args.signal_id,
+            status="ignored",
+            decision_reason=risk_message,
+        )
+        print(
+            f"Signal ignored due to risk cap: signal_id={args.signal_id} "
+            f"reason={risk_message}"
+        )
+        return
     idea = {
         "symbol": match["symbol"],
         "direction": match["direction"],
@@ -1272,6 +1512,376 @@ def handle_scan(config: AppConfig, args: argparse.Namespace) -> None:
     with open(output_path, "w", encoding="utf-8") as file:
         file.write("\n".join(lines) + "\n")
     print(f"wrote_scan: {output_path}")
+
+
+def _to_float(value: str) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _closed_trade_rows(journal_path: str, window_days: int | None = None) -> list[dict]:
+    rows = list(read_rows(journal_path))
+    closed_rows = [row for row in rows if row.get("exit_ts")]
+    if not window_days or window_days <= 0:
+        return closed_rows
+    cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=window_days)
+    filtered = []
+    for row in closed_rows:
+        ts = pd.to_datetime(row.get("exit_ts"), utc=True, errors="coerce")
+        if pd.isna(ts):
+            continue
+        if ts >= cutoff:
+            filtered.append(row)
+    return filtered
+
+
+def _closed_trade_r_values(journal_path: str, window_days: int | None = None) -> list[float]:
+    rows = _closed_trade_rows(journal_path, window_days=window_days)
+    values: list[float] = []
+    for row in rows:
+        parsed = _to_float(row.get("r_multiple"))
+        if parsed is not None:
+            values.append(parsed)
+    return values
+
+
+def _economics_metrics(
+    config: AppConfig,
+    monthly_ai_cost_usd: float | None,
+    monthly_ops_cost_usd: float | None,
+    target_net_usd: float | None,
+    projected_monthly_gross_usd: float | None,
+    auto_project: bool,
+    projection_window_days: int | None,
+    risk_per_trade_usd: float | None,
+) -> dict:
+    monthly_ai_cost = (
+        monthly_ai_cost_usd
+        if monthly_ai_cost_usd is not None
+        else config.monthly_ai_cost_usd
+    )
+    monthly_ops_cost = (
+        monthly_ops_cost_usd
+        if monthly_ops_cost_usd is not None
+        else config.monthly_ops_cost_usd
+    )
+    target_net = target_net_usd if target_net_usd is not None else config.target_net_usd
+    window_days = (
+        projection_window_days
+        if projection_window_days is not None
+        else config.economics_projection_window_days
+    )
+    risk_per_trade = (
+        risk_per_trade_usd
+        if risk_per_trade_usd is not None
+        else config.economics_risk_per_trade_usd
+    )
+    window_r = _closed_trade_r_values(config.journal_path, window_days=window_days)
+    window_avg_r = (sum(window_r) / len(window_r)) if window_r else 0.0
+    window_trades_per_month = (
+        (len(window_r) / max(1, window_days)) * 30 if window_days > 0 else 0.0
+    )
+    auto_projected_gross = window_avg_r * window_trades_per_month * risk_per_trade
+    if auto_project and len(window_r) > 0:
+        projected_gross = auto_projected_gross
+        projection_mode = "auto_from_closed_trades"
+    else:
+        projected_gross = (
+            projected_monthly_gross_usd
+            if projected_monthly_gross_usd is not None
+            else config.projected_monthly_gross_usd
+        )
+        projection_mode = "manual_config"
+    monthly_total_cost = monthly_ai_cost + monthly_ops_cost
+    projected_net = projected_gross - monthly_total_cost
+    required_gross_for_target = monthly_total_cost + target_net
+    return {
+        "economic_ready": projected_net >= target_net,
+        "monthly_ai_cost_usd": monthly_ai_cost,
+        "monthly_ops_cost_usd": monthly_ops_cost,
+        "monthly_total_cost_usd": monthly_total_cost,
+        "projected_monthly_gross_usd": projected_gross,
+        "projected_monthly_net_usd": projected_net,
+        "target_net_usd": target_net,
+        "required_gross_for_target_usd": required_gross_for_target,
+        "projection_mode": projection_mode,
+        "projection_window_days": window_days,
+        "projection_risk_per_trade_usd": risk_per_trade,
+        "window_closed_trades": len(window_r),
+        "window_avg_r": window_avg_r,
+        "window_trades_per_month": window_trades_per_month,
+    }
+
+
+def _go_live_metrics(
+    config: AppConfig,
+    min_trades: int,
+    min_avg_r: float,
+    max_drawdown_r_limit: float,
+    require_no_pending_signals: bool,
+    require_economic_ready: bool,
+    economic_target_net_usd: float | None,
+    economics_auto_project: bool,
+    economics_projection_window_days: int | None,
+    economics_risk_per_trade_usd: float | None,
+    economics_projected_monthly_gross_usd: float | None,
+) -> dict:
+    r_values = _closed_trade_r_values(config.journal_path)
+    avg_r = (sum(r_values) / len(r_values)) if r_values else 0.0
+    trades = len(r_values)
+    running = 0.0
+    peak = 0.0
+    max_drawdown_r = 0.0
+    for value in r_values:
+        running += value
+        peak = max(peak, running)
+        drawdown = running - peak
+        max_drawdown_r = min(max_drawdown_r, drawdown)
+    pending_reviews = len(list_review_queue(config.review_queue_path))
+    pending_signals = len(list_signal_queue(config.signal_queue_path, status="pending"))
+    checks = [
+        ("min_trades", trades >= min_trades, f"trades={trades} threshold={min_trades}"),
+        ("avg_r", avg_r >= min_avg_r, f"avg_r={avg_r:.2f} threshold={min_avg_r:.2f}"),
+        (
+            "max_drawdown_r",
+            max_drawdown_r >= -max_drawdown_r_limit,
+            f"max_drawdown_r={max_drawdown_r:.2f} limit=-{max_drawdown_r_limit:.2f}",
+        ),
+        ("pending_reviews", pending_reviews == 0, f"pending_reviews={pending_reviews}"),
+        (
+            "capital_cap_enabled",
+            config.max_capital_usd > 0,
+            f"max_capital_usd={config.max_capital_usd:.2f}",
+        ),
+        (
+            "risk_cap_enabled",
+            config.max_total_open_risk_usd > 0,
+            f"max_total_open_risk_usd={config.max_total_open_risk_usd:.2f}",
+        ),
+    ]
+    if require_no_pending_signals:
+        checks.append(
+            (
+                "pending_signals",
+                pending_signals == 0,
+                f"pending_signals={pending_signals}",
+            )
+        )
+    economics = _economics_metrics(
+        config=config,
+        monthly_ai_cost_usd=None,
+        monthly_ops_cost_usd=None,
+        target_net_usd=economic_target_net_usd,
+        projected_monthly_gross_usd=economics_projected_monthly_gross_usd,
+        auto_project=economics_auto_project,
+        projection_window_days=economics_projection_window_days,
+        risk_per_trade_usd=economics_risk_per_trade_usd,
+    )
+    if require_economic_ready:
+        checks.append(
+            (
+                "economic_ready",
+                economics["economic_ready"],
+                (
+                    f"projected_net={economics['projected_monthly_net_usd']:.2f} "
+                    f"target={economics['target_net_usd']:.2f}"
+                ),
+            )
+        )
+    return {
+        "go_live_ready": all(ok for _, ok, _ in checks),
+        "closed_trades": trades,
+        "avg_r": avg_r,
+        "max_drawdown_r": max_drawdown_r,
+        "pending_reviews": pending_reviews,
+        "pending_signals": pending_signals,
+        "checks": checks,
+        "economics": economics,
+    }
+
+
+def handle_go_live_check(config: AppConfig, args: argparse.Namespace) -> None:
+    metrics = _go_live_metrics(
+        config=config,
+        min_trades=args.min_trades,
+        min_avg_r=args.min_avg_r,
+        max_drawdown_r_limit=args.max_drawdown_r,
+        require_no_pending_signals=args.require_no_pending_signals,
+        require_economic_ready=args.require_economic_ready,
+        economic_target_net_usd=args.economic_target_net_usd,
+        economics_auto_project=not args.no_economic_auto_project,
+        economics_projection_window_days=args.economic_projection_window_days,
+        economics_risk_per_trade_usd=args.economic_risk_per_trade_usd,
+        economics_projected_monthly_gross_usd=args.economic_projected_monthly_gross_usd,
+    )
+    economics = metrics["economics"]
+    print(f"go_live_ready: {str(metrics['go_live_ready']).lower()}")
+    print(f"closed_trades: {metrics['closed_trades']}")
+    print(f"avg_r: {metrics['avg_r']:.2f}")
+    print(f"max_drawdown_r: {metrics['max_drawdown_r']:.2f}")
+    print(f"pending_reviews: {metrics['pending_reviews']}")
+    print(f"pending_signals: {metrics['pending_signals']}")
+    print(f"max_capital_usd: {config.max_capital_usd:.2f}")
+    print(f"max_total_open_risk_usd: {config.max_total_open_risk_usd:.2f}")
+    print(f"projected_monthly_gross_usd: {economics['projected_monthly_gross_usd']:.2f}")
+    print(f"projected_monthly_net_usd: {economics['projected_monthly_net_usd']:.2f}")
+    print(f"economic_target_net_usd: {economics['target_net_usd']:.2f}")
+    print(f"economic_projection_mode: {economics['projection_mode']}")
+    print("checks:")
+    for name, ok, detail in metrics["checks"]:
+        print(f"- {name}: {'pass' if ok else 'fail'} ({detail})")
+
+
+def handle_economics_check(config: AppConfig, args: argparse.Namespace) -> None:
+    metrics = _economics_metrics(
+        config=config,
+        monthly_ai_cost_usd=args.monthly_ai_cost_usd,
+        monthly_ops_cost_usd=args.monthly_ops_cost_usd,
+        target_net_usd=args.target_net_usd,
+        projected_monthly_gross_usd=args.projected_monthly_gross_usd,
+        auto_project=not args.no_auto_project,
+        projection_window_days=args.projection_window_days,
+        risk_per_trade_usd=args.risk_per_trade_usd,
+    )
+    print(f"economic_ready: {str(metrics['economic_ready']).lower()}")
+    print(f"monthly_ai_cost_usd: {metrics['monthly_ai_cost_usd']:.2f}")
+    print(f"monthly_ops_cost_usd: {metrics['monthly_ops_cost_usd']:.2f}")
+    print(f"monthly_total_cost_usd: {metrics['monthly_total_cost_usd']:.2f}")
+    print(f"projected_monthly_gross_usd: {metrics['projected_monthly_gross_usd']:.2f}")
+    print(f"projected_monthly_net_usd: {metrics['projected_monthly_net_usd']:.2f}")
+    print(f"target_net_usd: {metrics['target_net_usd']:.2f}")
+    print(f"required_gross_for_target_usd: {metrics['required_gross_for_target_usd']:.2f}")
+    print(f"projection_mode: {metrics['projection_mode']}")
+    print(f"projection_window_days: {metrics['projection_window_days']}")
+    print(f"projection_risk_per_trade_usd: {metrics['projection_risk_per_trade_usd']:.2f}")
+    print(f"window_closed_trades: {metrics['window_closed_trades']}")
+    print(f"window_avg_r: {metrics['window_avg_r']:.2f}")
+    print(f"window_trades_per_month: {metrics['window_trades_per_month']:.2f}")
+
+
+def handle_prune_stale_signals(config: AppConfig, args: argparse.Namespace) -> None:
+    rows = list_signal_queue(config.signal_queue_path, status="pending")
+    if not rows:
+        print("No pending signals to prune.")
+        return
+    now = pd.Timestamp.now(tz="UTC")
+    stale = []
+    for row in rows:
+        created = pd.to_datetime(row.get("created_ts"), utc=True, errors="coerce")
+        if pd.isna(created):
+            continue
+        age_days = (now - created).total_seconds() / 86400
+        if age_days >= args.max_age_days:
+            stale.append((row["signal_id"], age_days))
+    if not stale:
+        print("No stale pending signals found.")
+        return
+    for signal_id, age_days in stale:
+        reason = f"stale pending signal age={age_days:.2f}d >= {args.max_age_days:.2f}d"
+        if args.dry_run:
+            print(f"would_ignore: signal_id={signal_id} reason={reason}")
+            continue
+        update_signal_status(
+            config.signal_queue_path,
+            signal_id=signal_id,
+            status="ignored",
+            decision_reason=reason,
+        )
+        print(f"ignored_stale: signal_id={signal_id} reason={reason}")
+
+
+def handle_go_live_snapshot(config: AppConfig, args: argparse.Namespace) -> None:
+    metrics = _go_live_metrics(
+        config=config,
+        min_trades=args.min_trades,
+        min_avg_r=args.min_avg_r,
+        max_drawdown_r_limit=args.max_drawdown_r,
+        require_no_pending_signals=args.require_no_pending_signals,
+        require_economic_ready=args.require_economic_ready,
+        economic_target_net_usd=args.economic_target_net_usd,
+        economics_auto_project=not args.no_economic_auto_project,
+        economics_projection_window_days=args.economic_projection_window_days,
+        economics_risk_per_trade_usd=args.economic_risk_per_trade_usd,
+        economics_projected_monthly_gross_usd=args.economic_projected_monthly_gross_usd,
+    )
+    economics = metrics["economics"]
+    today = date_cls.today().isoformat()
+    output_path = args.output or f"knowledge/reviews/go_live_snapshot_{today}.md"
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    lines = [
+        f"Go-live snapshot ({today})",
+        "",
+        f"go_live_ready: {str(metrics['go_live_ready']).lower()}",
+        f"closed_trades: {metrics['closed_trades']}",
+        f"avg_r: {metrics['avg_r']:.2f}",
+        f"max_drawdown_r: {metrics['max_drawdown_r']:.2f}",
+        f"pending_reviews: {metrics['pending_reviews']}",
+        f"pending_signals: {metrics['pending_signals']}",
+        f"max_capital_usd: {config.max_capital_usd:.2f}",
+        f"max_total_open_risk_usd: {config.max_total_open_risk_usd:.2f}",
+        "",
+        "economics:",
+        f"- projection_mode: {economics['projection_mode']}",
+        f"- projected_monthly_gross_usd: {economics['projected_monthly_gross_usd']:.2f}",
+        f"- projected_monthly_net_usd: {economics['projected_monthly_net_usd']:.2f}",
+        f"- target_net_usd: {economics['target_net_usd']:.2f}",
+        f"- monthly_total_cost_usd: {economics['monthly_total_cost_usd']:.2f}",
+        "",
+        "checks:",
+    ]
+    for name, ok, detail in metrics["checks"]:
+        lines.append(f"- {name}: {'pass' if ok else 'fail'} ({detail})")
+    with open(output_path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines) + "\n")
+    print(f"wrote_go_live_snapshot: {output_path}")
+
+
+def handle_ops_report(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    open_exposure = _open_exposure_usd(client)
+    open_risk = _open_risk_to_stops_usd(client, config.journal_path)
+    pending_reviews = len(list_review_queue(config.review_queue_path))
+    pending_signals = len(list_signal_queue(config.signal_queue_path, status="pending"))
+    metrics = _go_live_metrics(
+        config=config,
+        min_trades=args.min_trades,
+        min_avg_r=args.min_avg_r,
+        max_drawdown_r_limit=args.max_drawdown_r,
+        require_no_pending_signals=args.require_no_pending_signals,
+        require_economic_ready=args.require_economic_ready,
+        economic_target_net_usd=args.economic_target_net_usd,
+        economics_auto_project=not args.no_economic_auto_project,
+        economics_projection_window_days=args.economic_projection_window_days,
+        economics_risk_per_trade_usd=args.economic_risk_per_trade_usd,
+        economics_projected_monthly_gross_usd=args.economic_projected_monthly_gross_usd,
+    )
+    economics = metrics["economics"]
+    today = date_cls.today().isoformat()
+    output_path = args.output or f"knowledge/reviews/ops_{today}.md"
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    lines = [
+        f"Ops report ({today})",
+        "",
+        f"open_exposure_usd: {open_exposure:.2f}",
+        f"open_risk_to_stops_usd: {open_risk:.2f}",
+        f"max_capital_usd: {config.max_capital_usd:.2f}",
+        f"max_total_open_risk_usd: {config.max_total_open_risk_usd:.2f}",
+        f"pending_reviews: {pending_reviews}",
+        f"pending_signals: {pending_signals}",
+        "",
+        f"go_live_ready: {str(metrics['go_live_ready']).lower()}",
+        f"economic_ready: {str(economics['economic_ready']).lower()}",
+        f"projected_monthly_net_usd: {economics['projected_monthly_net_usd']:.2f}",
+    ]
+    with open(output_path, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines) + "\n")
+    print(f"wrote_ops_report: {output_path}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1861,11 +2471,269 @@ def build_parser() -> argparse.ArgumentParser:
         default="data/hot_only_state.csv",
         help="Path for persisted hot-only pause/reactivation state",
     )
+
+    go_live_check_parser = subparsers.add_parser(
+        "go-live-check",
+        help="Evaluate measurable go-live readiness gates",
+    )
+    go_live_check_parser.add_argument(
+        "--min-trades",
+        type=int,
+        default=40,
+        help="Minimum closed trades required before go-live",
+    )
+    go_live_check_parser.add_argument(
+        "--min-avg-r",
+        type=float,
+        default=0.10,
+        help="Minimum average R across closed trades",
+    )
+    go_live_check_parser.add_argument(
+        "--max-drawdown-r",
+        type=float,
+        default=5.0,
+        help="Maximum allowed drawdown in R units (absolute value)",
+    )
+    go_live_check_parser.add_argument(
+        "--require-no-pending-signals",
+        action="store_true",
+        help="Fail check if pending signals remain",
+    )
+    go_live_check_parser.add_argument(
+        "--require-economic-ready",
+        action="store_true",
+        help="Fail check if economic check is not ready",
+    )
+    go_live_check_parser.add_argument(
+        "--economic-target-net-usd",
+        type=float,
+        default=None,
+        help="Override economic target net for go-live gate",
+    )
+    go_live_check_parser.add_argument(
+        "--no-economic-auto-project",
+        action="store_true",
+        help="Disable auto economics projection from closed trades",
+    )
+    go_live_check_parser.add_argument(
+        "--economic-projection-window-days",
+        type=int,
+        default=None,
+        help="Window for auto economics projection",
+    )
+    go_live_check_parser.add_argument(
+        "--economic-risk-per-trade-usd",
+        type=float,
+        default=None,
+        help="Risk per trade used by economics auto projection",
+    )
+    go_live_check_parser.add_argument(
+        "--economic-projected-monthly-gross-usd",
+        type=float,
+        default=None,
+        help="Manual projected gross used when auto projection is off",
+    )
     assess_multi_parser.add_argument(
         "--hot-max-allocation",
         type=float,
         default=0.2,
         help="Max allocation for hot-only signals (for reporting)",
+    )
+
+    economics_check_parser = subparsers.add_parser(
+        "economics-check",
+        help="Evaluate economic viability versus monthly costs",
+    )
+    economics_check_parser.add_argument(
+        "--monthly-ai-cost-usd",
+        type=float,
+        default=None,
+        help="Override monthly AI/tooling cost",
+    )
+    economics_check_parser.add_argument(
+        "--monthly-ops-cost-usd",
+        type=float,
+        default=None,
+        help="Override monthly ops/infrastructure cost",
+    )
+    economics_check_parser.add_argument(
+        "--target-net-usd",
+        type=float,
+        default=None,
+        help="Override required monthly net profit target",
+    )
+    economics_check_parser.add_argument(
+        "--projected-monthly-gross-usd",
+        type=float,
+        default=None,
+        help="Override projected monthly gross trading PnL",
+    )
+    economics_check_parser.add_argument(
+        "--no-auto-project",
+        action="store_true",
+        help="Disable auto projection from rolling closed-trade stats",
+    )
+    economics_check_parser.add_argument(
+        "--projection-window-days",
+        type=int,
+        default=None,
+        help="Rolling window for auto projection",
+    )
+    economics_check_parser.add_argument(
+        "--risk-per-trade-usd",
+        type=float,
+        default=None,
+        help="Risk per trade for auto projection math",
+    )
+
+    prune_stale_parser = subparsers.add_parser(
+        "prune-stale-signals",
+        help="Ignore pending signals older than a max age",
+    )
+    prune_stale_parser.add_argument(
+        "--max-age-days",
+        type=float,
+        default=2.0,
+        help="Pending signal age threshold in days",
+    )
+    prune_stale_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be ignored without updating queue",
+    )
+
+    go_live_snapshot_parser = subparsers.add_parser(
+        "go-live-snapshot",
+        help="Write a machine-checked go-live snapshot markdown",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--output",
+        default=None,
+        help="Snapshot markdown path",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--min-trades",
+        type=int,
+        default=40,
+        help="Minimum closed trades required before go-live",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--min-avg-r",
+        type=float,
+        default=0.10,
+        help="Minimum average R across closed trades",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--max-drawdown-r",
+        type=float,
+        default=5.0,
+        help="Maximum allowed drawdown in R units (absolute value)",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--require-no-pending-signals",
+        action="store_true",
+        help="Fail check if pending signals remain",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--require-economic-ready",
+        action="store_true",
+        help="Fail check if economics is not ready",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--economic-target-net-usd",
+        type=float,
+        default=None,
+        help="Override economic target net for go-live gate",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--no-economic-auto-project",
+        action="store_true",
+        help="Disable auto economics projection from closed trades",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--economic-projection-window-days",
+        type=int,
+        default=None,
+        help="Window for auto economics projection",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--economic-risk-per-trade-usd",
+        type=float,
+        default=None,
+        help="Risk per trade used by economics auto projection",
+    )
+    go_live_snapshot_parser.add_argument(
+        "--economic-projected-monthly-gross-usd",
+        type=float,
+        default=None,
+        help="Manual projected gross used when auto projection is off",
+    )
+
+    ops_report_parser = subparsers.add_parser(
+        "ops-report",
+        help="Write a concise daily operations report",
+    )
+    ops_report_parser.add_argument(
+        "--output",
+        default=None,
+        help="Ops report markdown path",
+    )
+    ops_report_parser.add_argument(
+        "--min-trades",
+        type=int,
+        default=40,
+        help="Minimum closed trades required before go-live",
+    )
+    ops_report_parser.add_argument(
+        "--min-avg-r",
+        type=float,
+        default=0.10,
+        help="Minimum average R across closed trades",
+    )
+    ops_report_parser.add_argument(
+        "--max-drawdown-r",
+        type=float,
+        default=5.0,
+        help="Maximum allowed drawdown in R units (absolute value)",
+    )
+    ops_report_parser.add_argument(
+        "--require-no-pending-signals",
+        action="store_true",
+        help="Fail check if pending signals remain",
+    )
+    ops_report_parser.add_argument(
+        "--require-economic-ready",
+        action="store_true",
+        help="Fail check if economics is not ready",
+    )
+    ops_report_parser.add_argument(
+        "--economic-target-net-usd",
+        type=float,
+        default=None,
+        help="Override economic target net for go-live gate",
+    )
+    ops_report_parser.add_argument(
+        "--no-economic-auto-project",
+        action="store_true",
+        help="Disable auto economics projection from closed trades",
+    )
+    ops_report_parser.add_argument(
+        "--economic-projection-window-days",
+        type=int,
+        default=None,
+        help="Window for auto economics projection",
+    )
+    ops_report_parser.add_argument(
+        "--economic-risk-per-trade-usd",
+        type=float,
+        default=None,
+        help="Risk per trade used by economics auto projection",
+    )
+    ops_report_parser.add_argument(
+        "--economic-projected-monthly-gross-usd",
+        type=float,
+        default=None,
+        help="Manual projected gross used when auto projection is off",
     )
 
     backtest_batch_parser = subparsers.add_parser(
@@ -2011,6 +2879,16 @@ def main() -> None:
         handle_assess_signal(config, args)
     elif args.command == "assess-multi":
         handle_assess_multi(config, args)
+    elif args.command == "go-live-check":
+        handle_go_live_check(config, args)
+    elif args.command == "economics-check":
+        handle_economics_check(config, args)
+    elif args.command == "prune-stale-signals":
+        handle_prune_stale_signals(config, args)
+    elif args.command == "go-live-snapshot":
+        handle_go_live_snapshot(config, args)
+    elif args.command == "ops-report":
+        handle_ops_report(config, args)
     elif args.command == "scan":
         handle_scan(config, args)
 
