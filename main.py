@@ -12,6 +12,7 @@ from alpaca_client import AlpacaClient
 from backtest import (
     BacktestResult,
     run_backtest,
+    run_portfolio_backtest,
     summarize_backtest,
     run_recent_backtest,
     write_backtest_rollup,
@@ -1460,6 +1461,104 @@ def handle_backtest_batch(config: AppConfig, args: argparse.Namespace) -> None:
                 )
 
 
+def handle_backtest_portfolio(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    if args.recent_days:
+        end = args.end or pd.Timestamp.now(tz="UTC").date().isoformat()
+        start = (
+            args.start
+            or (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=args.recent_days * 3))
+            .date()
+            .isoformat()
+        )
+    else:
+        start = args.start
+        end = args.end
+    if not args.recent_days and (not start or not end):
+        raise RuntimeError("start and end are required unless --recent-days is used.")
+
+    symbols = (
+        [value.strip().upper() for value in args.symbols.split(",") if value.strip()]
+        if args.symbols
+        else _read_universe(args.universe_path or config.universe_path)
+    )
+    requested_setups = (
+        [value.strip() for value in args.setups.split(",") if value.strip()]
+        if args.setups
+        else None
+    )
+
+    symbol_setups: list[tuple[str, str]] = []
+    for symbol in symbols:
+        if requested_setups is None:
+            allowed = _allowed_setups_for_symbol(config, symbol)
+            setups = sorted(allowed) if allowed else []
+        else:
+            setups = list(requested_setups)
+            if not args.ignore_allowlist:
+                allowed = _allowed_setups_for_symbol(config, symbol)
+                if allowed is not None:
+                    setups = [setup for setup in setups if setup in allowed]
+        for setup in setups:
+            symbol_setups.append((symbol, setup))
+
+    if not symbol_setups:
+        raise RuntimeError("No symbol/setup pairs to backtest after allowlist filters.")
+
+    qty = args.qty if args.qty is not None else float(config.fixed_position_size)
+    max_open_positions = (
+        args.max_open_positions
+        if args.max_open_positions is not None
+        else config.max_open_positions
+    )
+    max_capital_usd = (
+        args.max_capital_usd
+        if args.max_capital_usd is not None
+        else config.max_capital_usd
+    )
+    max_total_open_risk_usd = (
+        args.max_total_open_risk_usd
+        if args.max_total_open_risk_usd is not None
+        else config.max_total_open_risk_usd
+    )
+
+    result = run_portfolio_backtest(
+        client=client,
+        symbol_setups=symbol_setups,
+        start=start or "",
+        end=end or "",
+        risk_multiple=args.risk_multiple,
+        time_stop_days=args.time_stop_days,
+        qty=qty,
+        max_open_positions=max_open_positions,
+        max_capital_usd=max_capital_usd,
+        max_total_open_risk_usd=max_total_open_risk_usd,
+        output_trades_path=args.output_trades,
+        output_skips_path=args.output_skips,
+        output_signals_path=args.output_signals,
+        regime_filter=_regime_filter(config) if args.use_regime else None,
+        rank_by=args.rank_by,
+        score_lookback_trades=args.score_lookback_trades,
+        recent_days=args.recent_days,
+    )
+
+    print(f"signals_path: {result.signals_path}")
+    print(f"trades_path: {result.trades_path}")
+    print(f"skips_path: {result.skips_path}")
+    print(f"total_signals: {result.total_signals}")
+    print(f"executed_trades: {result.executed_trades}")
+    print(f"skipped_signals: {result.skipped_signals}")
+    print(f"fill_rate: {result.fill_rate:.2f}")
+    print(f"qty: {qty}")
+    print(f"max_open_positions: {max_open_positions}")
+    print(f"max_capital_usd: {max_capital_usd:.2f}")
+    print(f"max_total_open_risk_usd: {max_total_open_risk_usd:.2f}")
+    print(f"unconstrained_win_rate: {result.unconstrained_win_rate:.2f}")
+    print(f"unconstrained_avg_r: {result.unconstrained_avg_r:.2f}")
+    print(f"constrained_win_rate: {result.constrained_win_rate:.2f}")
+    print(f"constrained_avg_r: {result.constrained_avg_r:.2f}")
+
+
 def handle_scan(config: AppConfig, args: argparse.Namespace) -> None:
     client = AlpacaClient(config)
     symbols = (
@@ -2782,6 +2881,115 @@ def build_parser() -> argparse.ArgumentParser:
         help="Apply regime filter to batch backtests",
     )
 
+    backtest_portfolio_parser = subparsers.add_parser(
+        "backtest-portfolio",
+        help="Run a capacity-constrained portfolio backtest across symbols/setups",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--universe-path",
+        default=None,
+        help="Universe file path (defaults to config)",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--symbols",
+        default=None,
+        help="Comma-separated symbols (overrides universe file)",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--setups",
+        default=None,
+        help="Comma-separated setups (defaults to symbol allowlist)",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--ignore-allowlist",
+        action="store_true",
+        help="Ignore allowlist filtering when --setups is provided",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--start",
+        default=None,
+        help="Start date YYYY-MM-DD",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--end",
+        default=None,
+        help="End date YYYY-MM-DD",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--recent-days",
+        type=int,
+        default=180,
+        help="Limit to most recent N trading days",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--risk-multiple",
+        type=float,
+        default=2.0,
+        help="Take profit multiple (R)",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--time-stop-days",
+        type=int,
+        default=5,
+        help="Max holding days before time stop",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--qty",
+        type=float,
+        default=None,
+        help="Per-trade quantity used in constrained simulation",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--max-open-positions",
+        type=int,
+        default=None,
+        help="Max simultaneous open positions (<=0 disables)",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--max-capital-usd",
+        type=float,
+        default=None,
+        help="Total open notional cap in USD (<=0 disables)",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--max-total-open-risk-usd",
+        type=float,
+        default=None,
+        help="Total open risk-to-stop cap in USD (<=0 disables)",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--rank-by",
+        choices=["trailing_avg_r", "none"],
+        default="trailing_avg_r",
+        help="Signal ranking within same entry day",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--score-lookback-trades",
+        type=int,
+        default=20,
+        help="Trailing trade count for trailing_avg_r rank score",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--output-trades",
+        default="data/backtest_portfolio_trades.csv",
+        help="CSV path for constrained executed trades",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--output-skips",
+        default="data/backtest_portfolio_skips.csv",
+        help="CSV path for skipped signals and reasons",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--output-signals",
+        default="data/backtest_portfolio_signals.csv",
+        help="CSV path for unconstrained signal candidates",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--use-regime",
+        action="store_true",
+        help="Apply regime filter to portfolio backtest signals",
+    )
+
     scan_parser = subparsers.add_parser(
         "scan", help="Scan universe and write a daily candidate list"
     )
@@ -2871,6 +3079,8 @@ def main() -> None:
         handle_backtest_rollup(config, args)
     elif args.command == "backtest-batch":
         handle_backtest_batch(config, args)
+    elif args.command == "backtest-portfolio":
+        handle_backtest_portfolio(config, args)
     elif args.command == "review-snapshot":
         handle_review_snapshot(config, args)
     elif args.command == "no-trade-summary":

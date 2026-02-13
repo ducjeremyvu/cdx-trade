@@ -20,8 +20,38 @@ class BacktestResult:
     worst_r: float
 
 
+@dataclass(frozen=True)
+class PortfolioBacktestResult:
+    trades_path: str
+    skips_path: str
+    signals_path: str
+    total_signals: int
+    executed_trades: int
+    skipped_signals: int
+    fill_rate: float
+    constrained_win_rate: float
+    constrained_avg_r: float
+    unconstrained_win_rate: float
+    unconstrained_avg_r: float
+
+
 def _to_ny_timestamp(value: pd.Timestamp) -> str:
     return value.tz_convert("America/New_York").isoformat()
+
+
+def _signal_triggered(df: pd.DataFrame, signal_index: int, setup_name: str) -> bool:
+    prior = df.iloc[signal_index - 1]
+    latest = df.iloc[signal_index]
+    if setup_name == "PrevDayBreakout_D1":
+        return bool(latest["close"] > prior["high"])
+    if setup_name == "TwoDayBreakout_D1":
+        if signal_index < 2:
+            return False
+        prior_two = df.iloc[signal_index - 2]
+        return bool(latest["close"] > max(prior["high"], prior_two["high"]))
+    if setup_name == "MeanReversion_D1":
+        return bool(latest["close"] < prior["low"])
+    return False
 
 
 def _simulate_trade(
@@ -233,6 +263,267 @@ def summarize_backtest(trades_path: str) -> dict:
     yearly = yearly.to_dict(orient="records")
     monthly = monthly.to_dict(orient="records")
     return {"yearly": yearly, "monthly": monthly}
+
+
+def run_portfolio_backtest(
+    client: AlpacaClient,
+    symbol_setups: list[tuple[str, str]],
+    start: str,
+    end: str,
+    risk_multiple: float,
+    time_stop_days: int,
+    qty: float,
+    max_open_positions: int,
+    max_capital_usd: float,
+    max_total_open_risk_usd: float,
+    output_trades_path: str,
+    output_skips_path: str,
+    output_signals_path: str,
+    regime_filter: dict | None = None,
+    rank_by: str = "trailing_avg_r",
+    score_lookback_trades: int = 20,
+    recent_days: int | None = None,
+) -> PortfolioBacktestResult:
+    if risk_multiple <= 0:
+        raise ValueError("risk_multiple must be greater than 0")
+    if time_stop_days < 1:
+        raise ValueError("time_stop_days must be >= 1")
+    if qty <= 0:
+        raise ValueError("qty must be > 0")
+    if score_lookback_trades < 1:
+        raise ValueError("score_lookback_trades must be >= 1")
+    if rank_by not in {"trailing_avg_r", "none"}:
+        raise ValueError("rank_by must be one of: trailing_avg_r, none")
+
+    for path in [output_trades_path, output_skips_path, output_signals_path]:
+        output_dir = os.path.dirname(path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
+    candidates: list[dict] = []
+    for symbol, setup_name in sorted(symbol_setups):
+        bars = client.get_daily_bars(symbol, start, end)
+        if bars is None or bars.empty:
+            continue
+        df = bars.reset_index()
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        if recent_days is not None:
+            keep = recent_days + 2
+            if len(df) > keep:
+                df = df.iloc[-keep:].reset_index(drop=True)
+        df["symbol"] = symbol
+
+        for i in range(1, len(df) - 1):
+            if regime_filter and regime_filter.get("enabled", False):
+                regime = detect_regime(
+                    df.iloc[: i + 1],
+                    fast_sma=regime_filter.get("fast_sma", 20),
+                    slow_sma=regime_filter.get("slow_sma", 50),
+                )
+                if not regime_allows(setup_name, regime):
+                    continue
+            if not _signal_triggered(df, i, setup_name):
+                continue
+            trade = _simulate_trade(df, i, setup_name, risk_multiple, time_stop_days)
+            if not trade:
+                continue
+            entry_price = float(trade["entry_price"])
+            stop_price = float(trade["stop_price"])
+            candidates.append(
+                {
+                    **trade,
+                    "signal_id": f"{symbol}_{setup_name}_{i}",
+                    "entry_notional_usd": entry_price * qty,
+                    "risk_to_stop_usd": max(0.0, entry_price - stop_price) * qty,
+                }
+            )
+
+    all_signals_df = pd.DataFrame(candidates)
+    all_signals_df.to_csv(output_signals_path, index=False)
+    if all_signals_df.empty:
+        pd.DataFrame().to_csv(output_trades_path, index=False)
+        pd.DataFrame().to_csv(output_skips_path, index=False)
+        return PortfolioBacktestResult(
+            trades_path=output_trades_path,
+            skips_path=output_skips_path,
+            signals_path=output_signals_path,
+            total_signals=0,
+            executed_trades=0,
+            skipped_signals=0,
+            fill_rate=0.0,
+            constrained_win_rate=0.0,
+            constrained_avg_r=0.0,
+            unconstrained_win_rate=0.0,
+            unconstrained_avg_r=0.0,
+        )
+
+    all_signals_df["entry_ts"] = pd.to_datetime(
+        all_signals_df["entry_ts"], utc=True, errors="coerce"
+    )
+    all_signals_df["exit_ts"] = pd.to_datetime(
+        all_signals_df["exit_ts"], utc=True, errors="coerce"
+    )
+    all_signals_df["r_multiple"] = pd.to_numeric(
+        all_signals_df["r_multiple"], errors="coerce"
+    )
+    all_signals_df = all_signals_df.sort_values(
+        ["entry_ts", "symbol", "setup_name"]
+    ).reset_index(drop=True)
+
+    history = (
+        all_signals_df[
+            ["symbol", "setup_name", "exit_ts", "r_multiple"]
+        ]
+        .dropna(subset=["exit_ts", "r_multiple"])
+        .sort_values(["symbol", "setup_name", "exit_ts"])
+    )
+
+    executed: list[dict] = []
+    skipped: list[dict] = []
+    active_positions: list[dict] = []
+
+    grouped = all_signals_df.groupby("entry_ts", sort=True)
+    for entry_ts, group in grouped:
+        if pd.isna(entry_ts):
+            continue
+        active_positions = [
+            row for row in active_positions if row["exit_ts"] > entry_ts
+        ]
+        open_slots = len(active_positions)
+        open_exposure = sum(row["entry_notional_usd"] for row in active_positions)
+        open_risk = sum(row["risk_to_stop_usd"] for row in active_positions)
+
+        ranked_rows: list[dict] = []
+        for _, row in group.iterrows():
+            score = 0.0
+            if rank_by == "trailing_avg_r":
+                hist = history[
+                    (history["symbol"] == row["symbol"])
+                    & (history["setup_name"] == row["setup_name"])
+                    & (history["exit_ts"] < entry_ts)
+                ]["r_multiple"].tail(score_lookback_trades)
+                score = float(hist.mean()) if not hist.empty else 0.0
+            ranked_rows.append(
+                {
+                    "row": row.to_dict(),
+                    "score": score,
+                }
+            )
+        ranked_rows.sort(
+            key=lambda item: (
+                -item["score"],
+                item["row"]["symbol"],
+                item["row"]["setup_name"],
+                item["row"]["signal_id"],
+            )
+        )
+
+        for item in ranked_rows:
+            row = item["row"]
+            score = item["score"]
+            signal_id = row["signal_id"]
+            symbol = row["symbol"]
+            setup_name = row["setup_name"]
+            entry_notional_usd = float(row["entry_notional_usd"])
+            risk_to_stop_usd = float(row["risk_to_stop_usd"])
+
+            skip_reason = ""
+            if max_open_positions > 0 and open_slots >= max_open_positions:
+                skip_reason = "no_slot"
+            elif max_capital_usd > 0 and open_exposure + entry_notional_usd > max_capital_usd:
+                skip_reason = "no_capital"
+            elif (
+                max_total_open_risk_usd > 0
+                and open_risk + risk_to_stop_usd > max_total_open_risk_usd
+            ):
+                skip_reason = "risk_cap"
+
+            if skip_reason:
+                skipped.append(
+                    {
+                        "signal_id": signal_id,
+                        "symbol": symbol,
+                        "setup_name": setup_name,
+                        "entry_ts": row["entry_ts"],
+                        "exit_ts": row["exit_ts"],
+                        "entry_price": row["entry_price"],
+                        "stop_price": row["stop_price"],
+                        "r_multiple": row["r_multiple"],
+                        "rank_score": round(float(score), 6),
+                        "skip_reason": skip_reason,
+                        "open_slots": open_slots,
+                        "open_exposure_usd": round(open_exposure, 4),
+                        "open_risk_usd": round(open_risk, 4),
+                        "entry_notional_usd": round(entry_notional_usd, 4),
+                        "risk_to_stop_usd": round(risk_to_stop_usd, 4),
+                    }
+                )
+                continue
+
+            executed_row = {
+                "signal_id": signal_id,
+                "symbol": symbol,
+                "setup_name": setup_name,
+                "signal_ts": row["signal_ts"],
+                "entry_ts": row["entry_ts"],
+                "entry_price": row["entry_price"],
+                "stop_price": row["stop_price"],
+                "target_price": row["target_price"],
+                "exit_ts": row["exit_ts"],
+                "exit_price": row["exit_price"],
+                "exit_reason": row["exit_reason"],
+                "outcome": row["outcome"],
+                "r_multiple": row["r_multiple"],
+                "qty": qty,
+                "entry_notional_usd": round(entry_notional_usd, 4),
+                "risk_to_stop_usd": round(risk_to_stop_usd, 4),
+                "rank_score": round(float(score), 6),
+            }
+            executed.append(executed_row)
+            active_positions.append(
+                {
+                    "exit_ts": row["exit_ts"],
+                    "entry_notional_usd": entry_notional_usd,
+                    "risk_to_stop_usd": risk_to_stop_usd,
+                }
+            )
+            open_slots += 1
+            open_exposure += entry_notional_usd
+            open_risk += risk_to_stop_usd
+
+    executed_df = pd.DataFrame(executed)
+    skipped_df = pd.DataFrame(skipped)
+    executed_df.to_csv(output_trades_path, index=False)
+    skipped_df.to_csv(output_skips_path, index=False)
+
+    total_signals = int(len(all_signals_df))
+    executed_trades = int(len(executed_df))
+    skipped_signals = int(len(skipped_df))
+    fill_rate = (executed_trades / total_signals) if total_signals else 0.0
+
+    unconstrained_win_rate = float((all_signals_df["r_multiple"] > 0).mean())
+    unconstrained_avg_r = float(all_signals_df["r_multiple"].mean())
+    if executed_df.empty:
+        constrained_win_rate = 0.0
+        constrained_avg_r = 0.0
+    else:
+        constrained_win_rate = float((executed_df["r_multiple"] > 0).mean())
+        constrained_avg_r = float(executed_df["r_multiple"].mean())
+
+    return PortfolioBacktestResult(
+        trades_path=output_trades_path,
+        skips_path=output_skips_path,
+        signals_path=output_signals_path,
+        total_signals=total_signals,
+        executed_trades=executed_trades,
+        skipped_signals=skipped_signals,
+        fill_rate=fill_rate,
+        constrained_win_rate=constrained_win_rate,
+        constrained_avg_r=constrained_avg_r,
+        unconstrained_win_rate=unconstrained_win_rate,
+        unconstrained_avg_r=unconstrained_avg_r,
+    )
 
 
 def write_backtest_rollup(
