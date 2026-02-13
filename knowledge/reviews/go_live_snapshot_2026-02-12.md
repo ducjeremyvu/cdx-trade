@@ -1,4 +1,4 @@
-Go-live snapshot (2026-02-11)
+Go-live snapshot (2026-02-12)
 
 go_live_ready: false
 closed_trades: 0
@@ -23,5 +23,3 @@ checks:
 - pending_reviews: pass (pending_reviews=0)
 - capital_cap_enabled: pass (max_capital_usd=1000.00)
 - risk_cap_enabled: pass (max_total_open_risk_usd=20.00)
-- pending_signals: pass (pending_signals=0)
-- economic_ready: fail (projected_net=-20.00 target=30.00)
