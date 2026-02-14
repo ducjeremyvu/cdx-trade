@@ -1,0 +1,7 @@
+trades_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T165143Z/backtests/backtest_VTV_MeanReversion_D1_180d.csv
+total_trades: 29
+win_rate: 0.59
+avg_r: 0.60
+median_r: 0.95
+best_r: 2.00
+worst_r: -1.00

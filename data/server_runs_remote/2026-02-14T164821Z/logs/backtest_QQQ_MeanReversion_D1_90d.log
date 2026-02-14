@@ -1,0 +1,7 @@
+trades_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T164821Z/backtests/backtest_QQQ_MeanReversion_D1_90d.csv
+total_trades: 19
+win_rate: 0.47
+avg_r: 0.25
+median_r: -1.00
+best_r: 2.00
+worst_r: -1.00

@@ -14,7 +14,7 @@ Each run contains:
 
 - `reports/` (scan, daily, ops, go-live markdown)
 - `backtests/` (30/90/180 setup backtests)
-- `portfolio/` (constrained and unconstrained account backtests)
+- `portfolio/` (strict constrained, capacity3 constrained, and unconstrained account backtests)
 - `queue/` (signal queue snapshots)
 - `logs/` (command logs)
 - `manifest.json` (run metadata, size, key portfolio stats)

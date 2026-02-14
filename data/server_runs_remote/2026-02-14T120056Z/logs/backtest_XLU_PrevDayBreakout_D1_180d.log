@@ -1,0 +1,7 @@
+trades_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T120056Z/backtests/backtest_XLU_PrevDayBreakout_D1_180d.csv
+total_trades: 57
+win_rate: 0.47
+avg_r: 0.18
+median_r: -0.06
+best_r: 2.00
+worst_r: -1.00

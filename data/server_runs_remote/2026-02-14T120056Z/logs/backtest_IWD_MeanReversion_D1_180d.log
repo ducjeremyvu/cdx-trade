@@ -1,0 +1,7 @@
+trades_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T120056Z/backtests/backtest_IWD_MeanReversion_D1_180d.csv
+total_trades: 30
+win_rate: 0.57
+avg_r: 0.49
+median_r: 0.67
+best_r: 2.00
+worst_r: -1.00

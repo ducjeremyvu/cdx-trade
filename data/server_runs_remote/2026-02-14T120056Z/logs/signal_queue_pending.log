@@ -1,0 +1,64 @@
+signal_id=dc1775a3-9107-4ca7-b419-de99500b8f14 status=pending QQQ long setup=MeanReversion_D1 created=2026-02-04T21:12:46.118703+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close < prior day low
+invalidation_reason: Closes below yesterday low
+stop_loss_logic: Below yesterday low (610.98)
+take_profit_logic: 2R target
+market_context: range
+emotional_state: calm
+signal_id=dba55e4b-6eb3-4c53-acc7-2f8940a43323 status=pending XLP long setup=TwoDayBreakout_D1 created=2026-02-04T21:12:49.695961+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close > prior 2-day high
+invalidation_reason: Closes back below prior 2-day high
+stop_loss_logic: Below prior 2-day low (82.03)
+take_profit_logic: 2R target
+market_context: trend
+emotional_state: calm
+signal_id=7ed5dad6-1498-4761-87f3-fc6f195b21bc status=pending XLI long setup=TwoDayBreakout_D1 created=2026-02-04T21:12:51.347582+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close > prior 2-day high
+invalidation_reason: Closes back below prior 2-day high
+stop_loss_logic: Below prior 2-day low (163.75)
+take_profit_logic: 2R target
+market_context: trend
+emotional_state: calm
+signal_id=a1eb1d6c-88f6-44a0-9215-58dc209908d1 status=pending XME long setup=PrevDayBreakout_D1 created=2026-02-04T21:12:53.016288+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close > prior day high
+invalidation_reason: Closes back below prior day high
+stop_loss_logic: Below prior day low (117.27)
+take_profit_logic: 2R target
+market_context: trend
+emotional_state: calm
+signal_id=5bd8826d-bf7f-4c19-a2c4-edc0b985ac99 status=pending XBI long setup=TwoDayBreakout_D1 created=2026-02-04T21:12:54.748128+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close > prior 2-day high
+invalidation_reason: Closes back below prior 2-day high
+stop_loss_logic: Below prior 2-day low (123.83)
+take_profit_logic: 2R target
+market_context: trend
+emotional_state: calm
+signal_id=1b1b375e-0185-4f02-bfea-dbdc12db4d28 status=pending KRE long setup=PrevDayBreakout_D1 created=2026-02-04T21:12:56.388635+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close > prior day high
+invalidation_reason: Closes back below prior day high
+stop_loss_logic: Below prior day low (68.60)
+take_profit_logic: 2R target
+market_context: trend
+emotional_state: calm
+signal_id=103ebc27-2b70-436c-bc32-807a8f215364 status=pending EEM long setup=MeanReversion_D1 created=2026-02-04T21:59:44.658199+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close < prior day low
+invalidation_reason: Closes below yesterday low
+stop_loss_logic: Below yesterday low (58.56)
+take_profit_logic: 2R target
+market_context: range
+emotional_state: calm
+signal_id=95aaa8b8-7a01-4a08-b93e-f9c1512fca99 status=pending IEMG long setup=MeanReversion_D1 created=2026-02-04T21:59:46.325345+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close < prior day low
+invalidation_reason: Closes below yesterday low
+stop_loss_logic: Below yesterday low (72.00)
+take_profit_logic: 2R target
+market_context: range
+emotional_state: calm

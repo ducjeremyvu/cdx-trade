@@ -1,0 +1,7 @@
+trades_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T164821Z/backtests/backtest_XAR_TwoDayBreakout_D1_90d.csv
+total_trades: 28
+win_rate: 0.43
+avg_r: 0.00
+median_r: -0.17
+best_r: 2.00
+worst_r: -1.00

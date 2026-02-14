@@ -46,6 +46,9 @@ def main() -> None:
     out = Path(args.out)
 
     constrained = read_trade_stats(run_dir / "portfolio" / "trades_constrained.csv")
+    constrained_capacity3 = read_trade_stats(
+        run_dir / "portfolio" / "trades_constrained_capacity3.csv"
+    )
     unconstrained = read_trade_stats(run_dir / "portfolio" / "trades_unconstrained.csv")
     total_bytes = dir_size_bytes(run_dir)
 
@@ -57,6 +60,7 @@ def main() -> None:
         "est_yearly_gb_daily_runs": round((total_bytes * 365) / (1024**3), 2),
         "portfolio": {
             "constrained": constrained,
+            "constrained_capacity3": constrained_capacity3,
             "unconstrained": unconstrained,
         },
     }
