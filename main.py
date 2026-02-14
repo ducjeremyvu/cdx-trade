@@ -1,5 +1,6 @@
 import argparse
 import csv
+import json
 import os
 import re
 import time
@@ -1983,6 +1984,86 @@ def handle_ops_report(config: AppConfig, args: argparse.Namespace) -> None:
     print(f"wrote_ops_report: {output_path}")
 
 
+def handle_analyze_latest_run(config: AppConfig, args: argparse.Namespace) -> None:
+    root = args.root
+    if not os.path.exists(root):
+        raise RuntimeError(f"run root not found: {root}")
+    run_dirs = [
+        name
+        for name in os.listdir(root)
+        if os.path.isdir(os.path.join(root, name)) and re.match(r"^\d{4}-\d{2}-\d{2}", name)
+    ]
+    if not run_dirs:
+        raise RuntimeError(f"no run directories found in {root}")
+    run_dirs = sorted(run_dirs)
+    latest = run_dirs[-1]
+    latest_dir = os.path.join(root, latest)
+    manifest_path = os.path.join(latest_dir, "manifest.json")
+    if not os.path.exists(manifest_path):
+        raise RuntimeError(f"manifest missing for latest run: {manifest_path}")
+
+    with open(manifest_path, "r", encoding="utf-8") as file:
+        manifest = json.load(file)
+
+    portfolio = manifest.get("portfolio", {})
+    constrained = portfolio.get("constrained", {})
+    capacity3 = portfolio.get("constrained_capacity3", {})
+    unconstrained = portfolio.get("unconstrained", {})
+
+    print(f"run_root: {root}")
+    print(f"latest_run_id: {manifest.get('run_id', latest)}")
+    print(f"latest_run_dir: {latest_dir}")
+    print(f"run_size_mb: {manifest.get('size_mb', 0)}")
+    print("profiles:")
+    print(
+        f"- constrained: trades={constrained.get('trades', 0)} "
+        f"avg_r={constrained.get('avg_r', 0):.2f} "
+        f"win_rate={constrained.get('win_rate', 0):.2f} "
+        f"cum_r={constrained.get('cum_r', 0):.2f}"
+    )
+    if capacity3:
+        print(
+            f"- constrained_capacity3: trades={capacity3.get('trades', 0)} "
+            f"avg_r={capacity3.get('avg_r', 0):.2f} "
+            f"win_rate={capacity3.get('win_rate', 0):.2f} "
+            f"cum_r={capacity3.get('cum_r', 0):.2f}"
+        )
+    print(
+        f"- unconstrained: trades={unconstrained.get('trades', 0)} "
+        f"avg_r={unconstrained.get('avg_r', 0):.2f} "
+        f"win_rate={unconstrained.get('win_rate', 0):.2f} "
+        f"cum_r={unconstrained.get('cum_r', 0):.2f}"
+    )
+
+    skips_path = os.path.join(latest_dir, "portfolio", "skips_constrained.csv")
+    if os.path.exists(skips_path):
+        try:
+            skips = pd.read_csv(skips_path)
+        except pd.errors.EmptyDataError:
+            skips = pd.DataFrame()
+        if not skips.empty and "skip_reason" in skips.columns:
+            counts = skips["skip_reason"].value_counts()
+            print("skip_reasons:")
+            for reason, count in counts.items():
+                print(f"- {reason}: {int(count)}")
+
+    if len(run_dirs) >= 2:
+        prev = run_dirs[-2]
+        prev_manifest_path = os.path.join(root, prev, "manifest.json")
+        if os.path.exists(prev_manifest_path):
+            with open(prev_manifest_path, "r", encoding="utf-8") as file:
+                prev_manifest = json.load(file)
+            prev_constrained = prev_manifest.get("portfolio", {}).get("constrained", {})
+            print(f"prev_run_id: {prev_manifest.get('run_id', prev)}")
+            print(
+                "delta_vs_prev_constrained: "
+                f"trades={constrained.get('trades', 0) - prev_constrained.get('trades', 0)} "
+                f"avg_r={constrained.get('avg_r', 0) - prev_constrained.get('avg_r', 0):.2f} "
+                f"win_rate={constrained.get('win_rate', 0) - prev_constrained.get('win_rate', 0):.2f} "
+                f"cum_r={constrained.get('cum_r', 0) - prev_constrained.get('cum_r', 0):.2f}"
+            )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="V0 paper-trading system")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -2834,6 +2915,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Manual projected gross used when auto projection is off",
     )
+    analyze_latest_run_parser = subparsers.add_parser(
+        "analyze-latest-run",
+        help="Print morning summary from latest pulled server run manifest",
+    )
+    analyze_latest_run_parser.add_argument(
+        "--root",
+        default="data/server_runs_remote",
+        help="Root folder containing pulled run directories",
+    )
 
     backtest_batch_parser = subparsers.add_parser(
         "backtest-batch", help="Run backtests across a universe"
@@ -3099,6 +3189,8 @@ def main() -> None:
         handle_go_live_snapshot(config, args)
     elif args.command == "ops-report":
         handle_ops_report(config, args)
+    elif args.command == "analyze-latest-run":
+        handle_analyze_latest_run(config, args)
     elif args.command == "scan":
         handle_scan(config, args)
 

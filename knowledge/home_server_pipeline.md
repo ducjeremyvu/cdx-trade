@@ -4,6 +4,11 @@
 
 Keep code on Git, move bulky generated data to run folders on the server, and pull only generated artifacts to the MacBook for review.
 
+Baselines:
+
+- Deploy baseline: strict constrained profile (`max_open_positions=1`)
+- Research baseline: capacity profile (`max_open_positions=3`)
+
 ## Folder layout
 
 Server writes nightly runs under:
@@ -135,3 +140,41 @@ Examples:
 - 100 MB/run -> ~25.4 GB/year (weekdays)
 
 Retention caps keep this bounded regardless of yearly totals.
+
+## Runbook: failure modes
+
+1. SSH auth fails on fetch (`Permission denied`)
+   - Verify key auth from Mac:
+     - `ssh djv@<vpn-ip>`
+   - Ensure server key is in `~/.ssh/authorized_keys`.
+2. systemd fails with `203/EXEC`
+   - Unit points to invalid path (placeholder `<user>`).
+   - Check effective unit:
+     - `systemctl cat cdx-trade-nightly.service`
+   - Add host-specific override under:
+     - `/etc/systemd/system/cdx-trade-nightly.service.d/override.conf`
+3. systemd fails with `127` / `uv: command not found`
+   - Add PATH in override:
+     - `Environment=PATH=/home/<user>/.local/bin:/usr/local/bin:/usr/bin:/bin`
+   - Reload:
+     - `sudo systemctl daemon-reload`
+4. Service appears stuck after `systemctl start/restart`
+   - This is expected while oneshot pipeline runs.
+   - Follow logs:
+     - `journalctl -u cdx-trade-nightly.service -f`
+   - Use non-blocking start:
+     - `sudo systemctl start cdx-trade-nightly.service --no-block`
+
+## Morning summary command
+
+After fetching runs on Mac:
+
+```bash
+uv run python main.py analyze-latest-run --root data/server_runs_remote
+```
+
+This prints:
+- latest run id and size
+- constrained / constrained_capacity3 / unconstrained stats
+- skip reason counts
+- constrained delta vs previous run

@@ -14,6 +14,7 @@ Structure
 - changelog.md: what changed and why
 - study.md: prompts for quiet days
 - options_basics.md: options reference (learning only)
+- proofcheck_documentation.md: handoff verification checklist + reusable prompt
 
 Use
 - Update setup docs when rules change.
