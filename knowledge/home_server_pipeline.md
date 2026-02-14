@@ -42,11 +42,64 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now cdx-trade-nightly.timer
 ```
 
+## Server setup commands (copy/paste)
+
+```bash
+# SSH
+ssh <user>@<vpn-ip>
+
+# Clone once (or pull latest if already cloned)
+git clone git@github.com:ducjeremyvu/cdx-trade.git
+cd cdx-trade
+# existing clone path example:
+# cd /home/<user>/cdx-trade && git pull origin master
+
+# Configure runtime secrets
+# ensure .env contains ALPACA_API_KEY, ALPACA_API_SECRET, ALPACA_PAPER, etc.
+
+# Install dependencies
+uv sync
+
+# Mark scripts executable
+chmod +x scripts/home_server/run_nightly.sh
+chmod +x scripts/home_server/fetch_runs.sh
+
+# Smoke test one run
+./scripts/home_server/run_nightly.sh
+```
+
+```bash
+# Install and start scheduler
+sudo cp scripts/home_server/systemd/cdx-trade-nightly.service /etc/systemd/system/
+sudo cp scripts/home_server/systemd/cdx-trade-nightly.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now cdx-trade-nightly.timer
+```
+
+```bash
+# Verify timer and recent logs
+systemctl status cdx-trade-nightly.timer --no-pager
+systemctl list-timers | grep cdx-trade-nightly
+journalctl -u cdx-trade-nightly.service -n 200 --no-pager
+```
+
+```bash
+# Optional: trigger now
+sudo systemctl start cdx-trade-nightly.service
+journalctl -u cdx-trade-nightly.service -n 200 --no-pager
+```
+
 ## Mac pull workflow
 
 ```bash
 REMOTE=user@10.0.0.12 REMOTE_ROOT=/home/user/cdx-trade/data/server_runs \
   /Users/ducjeremyvu/cdx-trade/scripts/home_server/fetch_runs.sh
+```
+
+Check last pulls:
+
+```bash
+tail -n 20 /Users/ducjeremyvu/cdx-trade/data/server_runs_remote/_meta/pull_history.tsv
 ```
 
 Pulled data lands in:
