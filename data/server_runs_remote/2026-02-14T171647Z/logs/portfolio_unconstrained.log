@@ -1,0 +1,15 @@
+signals_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T171647Z/portfolio/signals_unconstrained.csv
+trades_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T171647Z/portfolio/trades_unconstrained.csv
+skips_path: /home/djv/cdx-trade/data/server_runs/2026-02-14T171647Z/portfolio/skips_unconstrained.csv
+total_signals: 1188
+executed_trades: 1188
+skipped_signals: 0
+fill_rate: 1.00
+qty: 1.0
+max_open_positions: 0
+max_capital_usd: 0.00
+max_total_open_risk_usd: 0.00
+unconstrained_win_rate: 0.57
+unconstrained_avg_r: 0.27
+constrained_win_rate: 0.57
+constrained_avg_r: 0.27

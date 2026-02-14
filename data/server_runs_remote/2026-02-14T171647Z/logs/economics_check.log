@@ -1,0 +1,14 @@
+economic_ready: false
+monthly_ai_cost_usd: 20.00
+monthly_ops_cost_usd: 0.00
+monthly_total_cost_usd: 20.00
+projected_monthly_gross_usd: -3.33
+projected_monthly_net_usd: -23.33
+target_net_usd: 30.00
+required_gross_for_target_usd: 50.00
+projection_mode: auto_from_closed_trades
+projection_window_days: 90
+projection_risk_per_trade_usd: 10.00
+window_closed_trades: 1
+window_avg_r: -1.00
+window_trades_per_month: 0.33
