@@ -1,0 +1,14 @@
+[Unit]
+Description=cdx-trade nightly pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/<user>/cdx-trade
+ExecStart=/home/<user>/cdx-trade/scripts/home_server/run_nightly.sh
+Environment=KEEP_DAYS=30
+Environment=KEEP_MAX_RUNS=120
+
+[Install]
+WantedBy=multi-user.target

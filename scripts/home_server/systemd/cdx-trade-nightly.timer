@@ -1,0 +1,9 @@
+[Unit]
+Description=Run cdx-trade nightly pipeline daily
+
+[Timer]
+OnCalendar=Mon..Fri 21:15
+Persistent=true
+
+[Install]
+WantedBy=timers.target
