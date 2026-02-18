@@ -69,6 +69,7 @@ done < "${QUEUE_DIR}/symbol_setup_pairs.tsv"
 run_cmd "portfolio_constrained" \
   uv run python main.py backtest-portfolio \
     --recent-days 180 \
+    --rank-by trailing_blended_avg_r \
     --output-trades "${PORTFOLIO_DIR}/trades_constrained.csv" \
     --output-skips "${PORTFOLIO_DIR}/skips_constrained.csv" \
     --output-signals "${PORTFOLIO_DIR}/signals_constrained.csv"
@@ -77,6 +78,7 @@ run_cmd "portfolio_constrained_capacity3" \
   uv run python main.py backtest-portfolio \
     --recent-days 180 \
     --max-open-positions 3 \
+    --rank-by trailing_avg_r \
     --output-trades "${PORTFOLIO_DIR}/trades_constrained_capacity3.csv" \
     --output-skips "${PORTFOLIO_DIR}/skips_constrained_capacity3.csv" \
     --output-signals "${PORTFOLIO_DIR}/signals_constrained_capacity3.csv"

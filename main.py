@@ -232,6 +232,45 @@ def _open_position_map(client: AlpacaClient) -> dict[str, dict]:
     return positions
 
 
+def _order_side_value(order_side: object) -> str:
+    if hasattr(order_side, "value"):
+        return str(getattr(order_side, "value")).lower()
+    return str(order_side).lower()
+
+
+def _pending_close_symbols(client: AlpacaClient, limit: int = 200) -> set[str]:
+    symbols: set[str] = set()
+    try:
+        orders = client.list_recent_orders(limit=limit, status="open")
+    except Exception:
+        # Fail-safe: if we cannot read open orders, keep strict slot behavior.
+        return symbols
+    for order in orders:
+        side = _order_side_value(getattr(order, "side", ""))
+        if side != "sell":
+            continue
+        symbol = str(getattr(order, "symbol", "")).upper()
+        if symbol:
+            symbols.add(symbol)
+    return symbols
+
+
+def _effective_open_trade_count_for_queue(
+    client: AlpacaClient, journal_path: str
+) -> tuple[int, int, set[str]]:
+    open_rows = [row for row in read_rows(journal_path) if not row.get("exit_ts")]
+    raw_open = len(open_rows)
+    if raw_open == 0:
+        return 0, 0, set()
+    pending_closes = _pending_close_symbols(client)
+    if not pending_closes:
+        return raw_open, raw_open, set()
+    effective_open = sum(
+        1 for row in open_rows if row.get("symbol", "").upper() not in pending_closes
+    )
+    return effective_open, raw_open, pending_closes
+
+
 def _open_risk_to_stops_usd(client: AlpacaClient, journal_path: str) -> float:
     rows = list(read_rows(journal_path))
     open_rows = [row for row in rows if not row.get("exit_ts")]
@@ -455,17 +494,32 @@ def evaluate_and_queue(
         )
         print(f"Watch-only symbol. Logged no-trade: log_id={log_id}")
         return None
-    if count_open_trades(config.journal_path) >= config.max_open_positions:
+    effective_open, raw_open, pending_closes = _effective_open_trade_count_for_queue(
+        client, config.journal_path
+    )
+    if effective_open >= config.max_open_positions:
         log_id = log_no_trade(
             config.no_trade_journal_path,
             symbol=symbol,
             reason="Max open positions reached",
             market_context=no_trade_context,
             emotional_state=no_trade_emotion,
-            notes=f"max_open_positions={config.max_open_positions}",
+            notes=(
+                f"max_open_positions={config.max_open_positions}; "
+                f"effective_open_trades={effective_open}; "
+                f"raw_open_trades={raw_open}; "
+                f"pending_close_symbols={','.join(sorted(pending_closes))}"
+            ),
         )
         print(f"Max open positions reached. Logged no-trade: log_id={log_id}")
         return None
+    if pending_closes:
+        print(
+            "slot_capacity_adjusted_for_pending_closes:"
+            f" raw_open={raw_open}"
+            f" effective_open={effective_open}"
+            f" pending_close_symbols={','.join(sorted(pending_closes))}"
+        )
     allowed_setups = _allowed_setups_for_symbol(config, symbol)
     idea = find_trade_idea(
         client,
@@ -1540,6 +1594,7 @@ def handle_backtest_portfolio(config: AppConfig, args: argparse.Namespace) -> No
         regime_filter=_regime_filter(config) if args.use_regime else None,
         rank_by=args.rank_by,
         score_lookback_trades=args.score_lookback_trades,
+        min_rank_score=args.min_rank_score,
         recent_days=args.recent_days,
     )
 
@@ -3049,7 +3104,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     backtest_portfolio_parser.add_argument(
         "--rank-by",
-        choices=["trailing_avg_r", "none"],
+        choices=["trailing_avg_r", "trailing_blended_avg_r", "none"],
         default="trailing_avg_r",
         help="Signal ranking within same entry day",
     )
@@ -3058,6 +3113,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=20,
         help="Trailing trade count for trailing_avg_r rank score",
+    )
+    backtest_portfolio_parser.add_argument(
+        "--min-rank-score",
+        type=float,
+        default=None,
+        help="Require trailing score before allocating a slot",
     )
     backtest_portfolio_parser.add_argument(
         "--output-trades",

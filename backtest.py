@@ -283,6 +283,7 @@ def run_portfolio_backtest(
     rank_by: str = "trailing_avg_r",
     score_lookback_trades: int = 20,
     recent_days: int | None = None,
+    min_rank_score: float | None = None,
 ) -> PortfolioBacktestResult:
     if risk_multiple <= 0:
         raise ValueError("risk_multiple must be greater than 0")
@@ -292,8 +293,10 @@ def run_portfolio_backtest(
         raise ValueError("qty must be > 0")
     if score_lookback_trades < 1:
         raise ValueError("score_lookback_trades must be >= 1")
-    if rank_by not in {"trailing_avg_r", "none"}:
-        raise ValueError("rank_by must be one of: trailing_avg_r, none")
+    if rank_by not in {"trailing_avg_r", "trailing_blended_avg_r", "none"}:
+        raise ValueError(
+            "rank_by must be one of: trailing_avg_r, trailing_blended_avg_r, none"
+        )
 
     for path in [output_trades_path, output_skips_path, output_signals_path]:
         output_dir = os.path.dirname(path)
@@ -404,6 +407,30 @@ def run_portfolio_backtest(
                     & (history["exit_ts"] < entry_ts)
                 ]["r_multiple"].tail(score_lookback_trades)
                 score = float(hist.mean()) if not hist.empty else 0.0
+            elif rank_by == "trailing_blended_avg_r":
+                pair_hist = history[
+                    (history["symbol"] == row["symbol"])
+                    & (history["setup_name"] == row["setup_name"])
+                    & (history["exit_ts"] < entry_ts)
+                ]["r_multiple"].tail(score_lookback_trades)
+                setup_hist = history[
+                    (history["setup_name"] == row["setup_name"])
+                    & (history["exit_ts"] < entry_ts)
+                ]["r_multiple"].tail(score_lookback_trades)
+                symbol_hist = history[
+                    (history["symbol"] == row["symbol"])
+                    & (history["exit_ts"] < entry_ts)
+                ]["r_multiple"].tail(score_lookback_trades)
+
+                pair_score = float(pair_hist.mean()) if not pair_hist.empty else 0.0
+                setup_score = (
+                    float(setup_hist.mean()) if not setup_hist.empty else 0.0
+                )
+                symbol_score = (
+                    float(symbol_hist.mean()) if not symbol_hist.empty else 0.0
+                )
+                # Blend pair/setup/symbol expectancy to reduce sparse-history ranking noise.
+                score = 0.5 * pair_score + 0.25 * setup_score + 0.25 * symbol_score
             ranked_rows.append(
                 {
                     "row": row.to_dict(),
@@ -429,7 +456,14 @@ def run_portfolio_backtest(
             risk_to_stop_usd = float(row["risk_to_stop_usd"])
 
             skip_reason = ""
-            if max_open_positions > 0 and open_slots >= max_open_positions:
+            if (
+                min_rank_score is not None
+                and min_rank_score > 0
+                and max_open_positions > 0
+                and score < min_rank_score
+            ):
+                skip_reason = "low_score"
+            elif max_open_positions > 0 and open_slots >= max_open_positions:
                 skip_reason = "no_slot"
             elif max_capital_usd > 0 and open_exposure + entry_notional_usd > max_capital_usd:
                 skip_reason = "no_capital"
