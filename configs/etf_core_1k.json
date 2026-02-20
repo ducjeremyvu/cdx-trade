@@ -1,10 +1,10 @@
 {
   "fixed_position_size": 1,
-  "journal_path": "data/trade_journal.csv",
-  "no_trade_journal_path": "data/no_trade_journal.csv",
-  "pending_reviews_path": "data/pending_reviews.csv",
-  "review_queue_path": "data/review_queue.csv",
-  "signal_queue_path": "data/signal_queue.csv",
+  "journal_path": "data/sleeves/etf_core_1k/trade_journal.csv",
+  "no_trade_journal_path": "data/sleeves/etf_core_1k/no_trade_journal.csv",
+  "pending_reviews_path": "data/sleeves/etf_core_1k/pending_reviews.csv",
+  "review_queue_path": "data/sleeves/etf_core_1k/review_queue.csv",
+  "signal_queue_path": "data/sleeves/etf_core_1k/signal_queue.csv",
   "enabled_setups": [
     "PrevDayBreakout_D1",
     "MeanReversion_D1",
@@ -82,7 +82,7 @@
   "watch_only_symbols": [
     "SPY"
   ],
-  "universe_path": "data/universe.txt",
+  "universe_path": "data/universes/etf_core.txt",
   "regime_filter_enabled": false,
   "regime_fast_sma": 20,
   "regime_slow_sma": 50

@@ -1,0 +1,8 @@
+log_id,symbol,timestamp,reason,market_context,emotional_state,notes
+f9202eb8-1e06-4f90-87a8-39afb963ff45,QQQ,2026-02-19T17:29:18.135131+00:00,No valid setup,unclear,calm,
+8387787f-24f3-4f40-8443-f52aa7f825c6,IWD,2026-02-19T17:29:18.939984+00:00,No valid setup,unclear,calm,
+3d5a05cc-ac6c-46ce-933c-afdbc9315012,VTV,2026-02-19T17:29:19.829166+00:00,No valid setup,unclear,calm,
+753b3caa-3652-42e4-9674-cc311e1b00cf,XLI,2026-02-19T17:29:20.756768+00:00,No valid setup,unclear,calm,
+53194387-2636-4e40-b7ef-0217e3278971,XLV,2026-02-19T17:29:21.564440+00:00,No valid setup,unclear,calm,
+db1667bf-e69e-428b-a9be-7d97f8219812,EEM,2026-02-19T17:29:22.427070+00:00,No valid setup,unclear,calm,
+2f939a8c-df4c-49c3-b22e-c08035d67981,IEMG,2026-02-19T17:29:23.269981+00:00,No valid setup,unclear,calm,

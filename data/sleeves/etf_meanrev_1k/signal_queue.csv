@@ -1,0 +1,1 @@
+signal_id,created_ts,symbol,direction,setup_name,entry_reason,invalidation_reason,stop_loss_logic,take_profit_logic,market_context,emotional_state,order_type,limit_price,qty,status,decision_ts,decision_reason

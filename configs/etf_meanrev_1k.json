@@ -1,0 +1,55 @@
+{
+  "fixed_position_size": 1,
+  "journal_path": "data/sleeves/etf_meanrev_1k/trade_journal.csv",
+  "no_trade_journal_path": "data/sleeves/etf_meanrev_1k/no_trade_journal.csv",
+  "pending_reviews_path": "data/sleeves/etf_meanrev_1k/pending_reviews.csv",
+  "review_queue_path": "data/sleeves/etf_meanrev_1k/review_queue.csv",
+  "signal_queue_path": "data/sleeves/etf_meanrev_1k/signal_queue.csv",
+  "enabled_setups": [
+    "MeanReversion_D1"
+  ],
+  "setups_by_symbol": {
+    "EEM": [
+      "MeanReversion_D1"
+    ],
+    "IEMG": [
+      "MeanReversion_D1"
+    ],
+    "IWD": [
+      "MeanReversion_D1"
+    ],
+    "QQQ": [
+      "MeanReversion_D1"
+    ],
+    "VTV": [
+      "MeanReversion_D1"
+    ],
+    "XLI": [
+      "MeanReversion_D1"
+    ],
+    "XLV": [
+      "MeanReversion_D1"
+    ]
+  },
+  "allowlist_only": true,
+  "backtest_gate_days": 90,
+  "backtest_gate_min_trades": 15,
+  "backtest_gate_min_avg_r": 0.1,
+  "backtest_gate_min_win_rate": 0.48,
+  "max_open_positions": 3,
+  "max_capital_usd": 1000,
+  "max_total_open_risk_usd": 20,
+  "monthly_ai_cost_usd": 20,
+  "monthly_ops_cost_usd": 0,
+  "target_net_usd": 30,
+  "projected_monthly_gross_usd": 0,
+  "economics_risk_per_trade_usd": 10,
+  "economics_projection_window_days": 90,
+  "watch_only_symbols": [
+    "SPY"
+  ],
+  "universe_path": "data/universes/etf_meanrev.txt",
+  "regime_filter_enabled": false,
+  "regime_fast_sma": 20,
+  "regime_slow_sma": 50
+}

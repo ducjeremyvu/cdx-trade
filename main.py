@@ -2121,6 +2121,11 @@ def handle_analyze_latest_run(config: AppConfig, args: argparse.Namespace) -> No
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="V0 paper-trading system")
+    parser.add_argument(
+        "--config",
+        default=None,
+        help="Config file path (overrides CONFIG_PATH env for this run)",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     trade_parser = subparsers.add_parser("trade", help="Evaluate and place a trade")
@@ -3184,15 +3189,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.config:
+        os.environ["CONFIG_PATH"] = args.config
+
     config = AppConfig.from_env()
     init_journal(config.journal_path)
     init_no_trade_journal(config.no_trade_journal_path)
     init_pending_reviews(config.pending_reviews_path)
     init_review_queue(config.review_queue_path)
     init_signal_queue(config.signal_queue_path)
-
-    parser = build_parser()
-    args = parser.parse_args()
 
     if args.command == "trade":
         handle_trade(config, args)

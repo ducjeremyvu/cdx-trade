@@ -14,6 +14,20 @@ Quick start
 - Optional: `WATCH_ONLY_SYMBOLS=SPY`
 - Paper data note: Alpaca paper data is 15-min delayed, so V0 uses completed daily bars.
 
+Multi-sleeve 1k setup
+- You can run isolated virtual `1k` sleeves by config:
+  - `configs/etf_core_1k.json`
+  - `configs/etf_breakout_1k.json`
+  - `configs/etf_meanrev_1k.json`
+- Each sleeve writes to its own data folder under `data/sleeves/...`.
+- Run any command against a sleeve:
+  - `uv run python main.py --config configs/etf_core_1k.json scan`
+  - `uv run python main.py --config configs/etf_breakout_1k.json signal --symbol XME`
+- Helper wrapper:
+  - List sleeves: `uv run python scripts/run_sleeve.py --list`
+  - Run command: `uv run python scripts/run_sleeve.py --sleeve etf_core_1k -- scan`
+  - Run command: `uv run python scripts/run_sleeve.py --sleeve etf_meanrev_1k -- ops-report`
+
 Run
 - Place a trade idea (daily breakout): `python main.py trade --symbol SPY`
 - Queue a signal without trading: `python main.py signal --symbol SPY`

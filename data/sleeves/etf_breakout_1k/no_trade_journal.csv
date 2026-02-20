@@ -1,0 +1,7 @@
+log_id,symbol,timestamp,reason,market_context,emotional_state,notes
+985ccd89-f932-4ad2-98a9-140ae21f20e9,IWM,2026-02-19T17:29:08.158152+00:00,No valid setup,unclear,calm,
+c216187d-53ae-4a09-af2c-cdc9ea0ff0b5,KRE,2026-02-19T17:29:08.983369+00:00,No valid setup,unclear,calm,
+b5c7b81c-ca4f-4c47-8c59-fd9ac2c85d5d,XAR,2026-02-19T17:29:11.259272+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): avg_r 0.05 < 0.10
+045e4db1-5485-4ada-a4a4-138d542a8de1,XBI,2026-02-19T17:29:12.113884+00:00,No valid setup,unclear,calm,
+7f403844-a5b6-40c9-a20e-171e00e2b3d4,XLP,2026-02-19T17:29:12.915311+00:00,No valid setup,unclear,calm,
+33f92f7c-46df-4dcb-a410-8a0d06457364,XLU,2026-02-19T17:29:13.691211+00:00,No valid setup,unclear,calm,
