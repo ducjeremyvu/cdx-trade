@@ -1,0 +1,27 @@
+{
+  "run_id": "2026-02-18T211516Z",
+  "run_dir": "/home/djv/cdx-trade/data/server_runs/2026-02-18T211516Z",
+  "size_bytes": 1669644,
+  "size_mb": 1.59,
+  "est_yearly_gb_daily_runs": 0.57,
+  "portfolio": {
+    "constrained": {
+      "trades": 70,
+      "avg_r": 0.20427714285714285,
+      "win_rate": 0.45714285714285713,
+      "cum_r": 14.2994
+    },
+    "constrained_capacity3": {
+      "trades": 201,
+      "avg_r": 0.19442985074626865,
+      "win_rate": 0.47761194029850745,
+      "cum_r": 39.0804
+    },
+    "unconstrained": {
+      "trades": 1187,
+      "avg_r": 0.27483268744734624,
+      "win_rate": 0.5686604886267902,
+      "cum_r": 326.2264
+    }
+  }
+}

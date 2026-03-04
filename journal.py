@@ -81,6 +81,30 @@ SIGNAL_QUEUE_FIELDNAMES = [
     "decision_reason",
 ]
 
+EXECUTION_LEDGER_FIELDNAMES = [
+    "event_id",
+    "created_ts",
+    "updated_ts",
+    "sleeve_id",
+    "source",
+    "signal_id",
+    "trade_id",
+    "order_id",
+    "symbol",
+    "side",
+    "qty",
+    "order_type",
+    "order_class",
+    "status",
+    "filled_qty",
+    "filled_avg_price",
+    "filled_at",
+    "entry_price_est",
+    "stop_loss_price",
+    "take_profit_price",
+    "notes",
+]
+
 
 def init_journal(journal_path: str) -> None:
     dir_name = os.path.dirname(journal_path)
@@ -135,6 +159,17 @@ def init_signal_queue(journal_path: str) -> None:
         return
     with open(journal_path, "w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=SIGNAL_QUEUE_FIELDNAMES)
+        writer.writeheader()
+
+
+def init_execution_ledger(journal_path: str) -> None:
+    dir_name = os.path.dirname(journal_path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+    if os.path.exists(journal_path):
+        return
+    with open(journal_path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=EXECUTION_LEDGER_FIELDNAMES)
         writer.writeheader()
 
 
@@ -502,6 +537,67 @@ def update_signal_status(
         writer.writeheader()
         writer.writerows(rows)
     return updated
+
+
+def list_execution_ledger(journal_path: str) -> list[dict]:
+    with open(journal_path, "r", newline="", encoding="utf-8") as file:
+        return list(csv.DictReader(file))
+
+
+def write_execution_ledger(journal_path: str, rows: list[dict]) -> None:
+    with open(journal_path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=EXECUTION_LEDGER_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def append_execution_event(
+    journal_path: str,
+    sleeve_id: str,
+    source: str,
+    order_id: str,
+    symbol: str,
+    side: str,
+    qty: float,
+    order_type: str,
+    status: str,
+    signal_id: str = "",
+    trade_id: str = "",
+    order_class: str = "bracket",
+    entry_price_est: float | None = None,
+    stop_loss_price: float | None = None,
+    take_profit_price: float | None = None,
+    notes: str = "",
+) -> str:
+    event_id = str(uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+    row = {
+        "event_id": event_id,
+        "created_ts": now_iso,
+        "updated_ts": now_iso,
+        "sleeve_id": sleeve_id,
+        "source": source,
+        "signal_id": signal_id,
+        "trade_id": trade_id,
+        "order_id": order_id,
+        "symbol": symbol,
+        "side": side,
+        "qty": qty,
+        "order_type": order_type,
+        "order_class": order_class,
+        "status": status,
+        "filled_qty": "",
+        "filled_avg_price": "",
+        "filled_at": "",
+        "entry_price_est": entry_price_est if entry_price_est is not None else "",
+        "stop_loss_price": stop_loss_price if stop_loss_price is not None else "",
+        "take_profit_price": take_profit_price if take_profit_price is not None else "",
+        "notes": notes,
+    }
+    with open(journal_path, "a", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=EXECUTION_LEDGER_FIELDNAMES)
+        writer.writerow(row)
+    return event_id
 
 
 def find_open_trade_id(journal_path: str, symbol: str) -> str | None:

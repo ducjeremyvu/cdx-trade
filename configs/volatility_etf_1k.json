@@ -1,0 +1,63 @@
+{
+  "sleeve_id": "volatility_etf_1k",
+  "fixed_position_size": 1,
+  "journal_path": "data/sleeves/volatility_etf_1k/trade_journal.csv",
+  "no_trade_journal_path": "data/sleeves/volatility_etf_1k/no_trade_journal.csv",
+  "pending_reviews_path": "data/sleeves/volatility_etf_1k/pending_reviews.csv",
+  "review_queue_path": "data/sleeves/volatility_etf_1k/review_queue.csv",
+  "signal_queue_path": "data/sleeves/volatility_etf_1k/signal_queue.csv",
+  "execution_ledger_path": "data/execution_ledger.csv",
+  "enabled_setups": [
+    "PrevDayBreakout_D1",
+    "MeanReversion_D1",
+    "TwoDayBreakout_D1"
+  ],
+  "setups_by_symbol": {
+    "TQQQ": [
+      "MeanReversion_D1"
+    ],
+    "SOXL": [
+      "PrevDayBreakout_D1",
+      "MeanReversion_D1",
+      "TwoDayBreakout_D1"
+    ],
+    "SPXL": [
+      "TwoDayBreakout_D1"
+    ],
+    "UPRO": [
+      "TwoDayBreakout_D1"
+    ],
+    "TMF": [
+      "MeanReversion_D1"
+    ],
+    "UVXY": [
+      "TwoDayBreakout_D1"
+    ],
+    "SVXY": [
+      "TwoDayBreakout_D1"
+    ],
+    "BITO": [
+      "MeanReversion_D1",
+      "TwoDayBreakout_D1"
+    ]
+  },
+  "allowlist_only": true,
+  "backtest_gate_days": 90,
+  "backtest_gate_min_trades": 15,
+  "backtest_gate_min_avg_r": 0.05,
+  "backtest_gate_min_win_rate": 0.48,
+  "max_open_positions": 3,
+  "max_capital_usd": 1000,
+  "max_total_open_risk_usd": 20,
+  "monthly_ai_cost_usd": 20,
+  "monthly_ops_cost_usd": 0,
+  "target_net_usd": 30,
+  "projected_monthly_gross_usd": 0,
+  "economics_risk_per_trade_usd": 10,
+  "economics_projection_window_days": 90,
+  "watch_only_symbols": [],
+  "universe_path": "data/universes/volatility_etf.txt",
+  "regime_filter_enabled": false,
+  "regime_fast_sma": 20,
+  "regime_slow_sma": 50
+}

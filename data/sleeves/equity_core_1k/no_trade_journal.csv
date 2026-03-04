@@ -1,0 +1,12 @@
+log_id,symbol,timestamp,reason,market_context,emotional_state,notes
+c1ea1c88-3f00-45aa-b086-a3e3a009f3e5,AAPL,2026-02-27T17:03:06.309046+00:00,No valid setup,unclear,calm,
+29b4275c-8fb3-4ecc-8359-85a69bede878,MSFT,2026-02-27T17:03:07.312406+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): avg_r -0.50 < 0.10
+1a87960e-b14d-461f-96fa-b05bfd87d705,TSLA,2026-02-27T17:03:08.668783+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): avg_r -0.20 < 0.10
+1318975e-8d63-4c9a-9265-ad3eae0a0984,AAPL,2026-02-27T18:14:28.523671+00:00,No valid setup,unclear,calm,
+c49ea13f-30b7-4e70-adfa-18b80e7a3810,MSFT,2026-02-27T18:14:31.047831+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): avg_r -0.50 < 0.10
+e09aa15a-202a-429c-9233-c6b70e1ca26a,TSLA,2026-02-27T18:14:32.281416+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): avg_r -0.20 < 0.10
+f89f6bb2-965a-4a34-a8f3-7e0733e4516d,NVDA,2026-02-27T18:14:33.685987+00:00,No valid setup,unclear,calm,
+616b2587-3097-44bd-bfe0-363b76942f07,AMD,2026-02-27T18:14:34.588751+00:00,No valid setup,unclear,calm,
+36b938f7-1d70-4fb2-bedb-0f157737b919,AMZN,2026-02-27T18:14:35.420701+00:00,No valid setup,unclear,calm,
+9952aa3e-744c-4f87-8c4d-b68856b28f5b,COIN,2026-02-27T18:14:38.926997+00:00,No valid setup,unclear,calm,
+59d2b3f8-841e-45d3-a7f6-12eb7f0ec98c,MSTR,2026-02-27T18:14:40.749652+00:00,No valid setup,unclear,calm,

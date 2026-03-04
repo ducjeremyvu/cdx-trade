@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 
 @dataclass(frozen=True)
 class AppConfig:
+    config_path: str
+    sleeve_id: str
     api_key: str
     api_secret: str
     paper: bool
@@ -38,6 +40,9 @@ class AppConfig:
     projected_monthly_gross_usd: float
     economics_risk_per_trade_usd: float
     economics_projection_window_days: int
+    execution_ledger_path: str
+    time_stop_days: int
+    time_stop_min_r: float
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -48,6 +53,10 @@ class AppConfig:
         if config_file.exists():
             with config_file.open("r", encoding="utf-8") as file:
                 config_data = json.load(file)
+        sleeve_id = os.getenv("SLEEVE_ID", "").strip() or config_data.get(
+            "sleeve_id",
+            config_file.stem,
+        )
 
         api_key = os.getenv("ALPACA_API_KEY", "").strip()
         api_secret = os.getenv("ALPACA_API_SECRET", "").strip()
@@ -82,6 +91,22 @@ class AppConfig:
         signal_queue_path = os.getenv(
             "SIGNAL_QUEUE_PATH",
             config_data.get("signal_queue_path", "data/signal_queue.csv"),
+        )
+        execution_ledger_path = os.getenv(
+            "EXECUTION_LEDGER_PATH",
+            config_data.get("execution_ledger_path", "data/execution_ledger.csv"),
+        )
+        time_stop_days = int(
+            os.getenv(
+                "TIME_STOP_DAYS",
+                str(config_data.get("time_stop_days", 10)),
+            )
+        )
+        time_stop_min_r = float(
+            os.getenv(
+                "TIME_STOP_MIN_R",
+                str(config_data.get("time_stop_min_r", 1.0)),
+            )
         )
         enabled_setups_raw = os.getenv("ENABLED_SETUPS", "").strip()
         if enabled_setups_raw:
@@ -245,6 +270,8 @@ class AppConfig:
         ).lower() in {"1", "true", "yes", "y"}
 
         return cls(
+            config_path=str(config_file),
+            sleeve_id=sleeve_id,
             api_key=api_key,
             api_secret=api_secret,
             paper=paper,
@@ -269,6 +296,9 @@ class AppConfig:
             projected_monthly_gross_usd=projected_monthly_gross_usd,
             economics_risk_per_trade_usd=economics_risk_per_trade_usd,
             economics_projection_window_days=economics_projection_window_days,
+            execution_ledger_path=execution_ledger_path,
+            time_stop_days=time_stop_days,
+            time_stop_min_r=time_stop_min_r,
             watch_only_symbols=watch_only_symbols,
             universe_path=universe_path,
             regime_filter_enabled=regime_filter_enabled,

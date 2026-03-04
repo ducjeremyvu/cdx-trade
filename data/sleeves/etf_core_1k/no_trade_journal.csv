@@ -37,3 +37,7 @@ db4b9f8c-f496-449a-9f8b-77aed513f9e8,VTV,2026-02-19T17:29:00.060690+00:00,No val
 f1ad6738-2060-48b5-b7ae-e6b283a313bc,XTL,2026-02-19T17:29:05.648835+00:00,No valid setup,unclear,calm,
 365ee2a2-beb4-40d3-8e09-e38114f380f5,XSW,2026-02-19T17:29:06.503615+00:00,No valid setup,unclear,calm,
 728d26d2-14b6-4105-8b1a-e0198f232022,SPY,2026-02-19T17:29:06.900960+00:00,Watch-only symbol,unclear,calm,Symbol is configured as watch-only
+f57491e7-c101-4fe3-ad76-e433d288a8a7,XME,2026-02-27T17:02:53.999376+00:00,No valid setup,unclear,calm,
+948aec35-a50b-4f33-96e9-3a4fbf5c5131,EEM,2026-02-27T17:02:55.404798+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): trades 12 < 15
+65ecfc81-3256-4119-8a09-2c81d46f1b04,IEMG,2026-02-27T17:02:56.377381+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): trades 12 < 15
+bef4b69c-e9f4-49d5-a639-6a1b891bda4e,SMH,2026-02-27T17:02:58.715350+00:00,No valid setup,unclear,calm,

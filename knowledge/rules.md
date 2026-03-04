@@ -17,6 +17,7 @@ Approval checklist (semi-auto)
 
 Exit rules
 - Take profit at 2R or stop loss at prior day low.
+- Time stop: exit after 10 trading sessions if < +1R.
 - If time stop is used, log it explicitly as exit reason.
 
 Universe and data

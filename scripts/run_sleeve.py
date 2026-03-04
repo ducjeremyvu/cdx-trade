@@ -10,6 +10,8 @@ SLEEVE_TO_CONFIG = {
     "etf_core_1k": "configs/etf_core_1k.json",
     "etf_breakout_1k": "configs/etf_breakout_1k.json",
     "etf_meanrev_1k": "configs/etf_meanrev_1k.json",
+    "equity_core_1k": "configs/equity_core_1k.json",
+    "volatility_etf_1k": "configs/volatility_etf_1k.json",
 }
 
 

@@ -25,6 +25,7 @@ from journal import (
     init_pending_reviews,
     init_review_queue,
     init_signal_queue,
+    init_execution_ledger,
     log_entry,
     log_exit,
     log_no_trade,
@@ -40,6 +41,9 @@ from journal import (
     update_signal_status,
     read_rows,
     count_open_trades,
+    append_execution_event,
+    list_execution_ledger,
+    write_execution_ledger,
 )
 from trade_logic import find_trade_idea
 from review import (
@@ -92,6 +96,66 @@ def build_order_list(client: AlpacaClient, limit: int) -> list[dict]:
             }
         )
     return order_list
+
+
+def _order_status_value(status: object) -> str:
+    if hasattr(status, "value"):
+        return str(getattr(status, "value")).lower()
+    return str(status).lower()
+
+
+def _order_side_value(order_side: object) -> str:
+    if hasattr(order_side, "value"):
+        return str(getattr(order_side, "value")).lower()
+    return str(order_side).lower()
+
+
+def _reconcile_execution_ledger(config: AppConfig, client: AlpacaClient) -> int:
+    terminal = {"filled", "canceled", "expired", "rejected"}
+    rows = list_execution_ledger(config.execution_ledger_path)
+    if not rows:
+        return 0
+    updated = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for row in rows:
+        order_id = row.get("order_id", "")
+        status = str(row.get("status", "")).lower()
+        if not order_id or status in terminal:
+            continue
+        try:
+            order = client.get_order(order_id)
+        except Exception:
+            continue
+        next_status = _order_status_value(getattr(order, "status", ""))
+        filled_qty = getattr(order, "filled_qty", None)
+        filled_avg_price = getattr(order, "filled_avg_price", None)
+        filled_at = getattr(order, "filled_at", None)
+        changed = False
+        if next_status and next_status != status:
+            row["status"] = next_status
+            changed = True
+        next_filled_qty = str(filled_qty) if filled_qty not in (None, "") else ""
+        if next_filled_qty != str(row.get("filled_qty", "")):
+            row["filled_qty"] = next_filled_qty
+            changed = True
+        next_filled_avg = (
+            str(float(filled_avg_price)) if filled_avg_price not in (None, "") else ""
+        )
+        if next_filled_avg != str(row.get("filled_avg_price", "")):
+            row["filled_avg_price"] = next_filled_avg
+            changed = True
+        next_filled_at = (
+            filled_at.isoformat() if hasattr(filled_at, "isoformat") and filled_at else ""
+        )
+        if next_filled_at != str(row.get("filled_at", "")):
+            row["filled_at"] = next_filled_at
+            changed = True
+        if changed:
+            row["updated_ts"] = now_iso
+            updated += 1
+    if updated:
+        write_execution_ledger(config.execution_ledger_path, rows)
+    return updated
 
 
 def _allowed_setups_for_symbol(config: AppConfig, symbol: str) -> set[str] | None:
@@ -217,6 +281,24 @@ def _extract_stop_price(stop_loss_logic: str) -> float | None:
     return float(match.group(1))
 
 
+def _extract_r_multiple(take_profit_logic: str) -> float | None:
+    if not take_profit_logic:
+        return None
+    match = re.search(r"([-+]?[0-9]*\.?[0-9]+)\s*R", take_profit_logic, re.IGNORECASE)
+    if not match:
+        return None
+    return float(match.group(1))
+
+
+def _extract_price_in_parentheses(value: str) -> float | None:
+    if not value:
+        return None
+    match = re.search(r"\(([-+]?[0-9]*\.?[0-9]+)\)", value)
+    if not match:
+        return None
+    return float(match.group(1))
+
+
 def _open_position_map(client: AlpacaClient) -> dict[str, dict]:
     positions = {}
     for position in client.list_open_positions():
@@ -230,12 +312,6 @@ def _open_position_map(client: AlpacaClient) -> dict[str, dict]:
             "avg_entry_price": avg_entry_price,
         }
     return positions
-
-
-def _order_side_value(order_side: object) -> str:
-    if hasattr(order_side, "value"):
-        return str(getattr(order_side, "value")).lower()
-    return str(order_side).lower()
 
 
 def _pending_close_symbols(client: AlpacaClient, limit: int = 200) -> set[str]:
@@ -293,6 +369,85 @@ def _open_risk_to_stops_usd(client: AlpacaClient, journal_path: str) -> float:
     return total_risk
 
 
+def _count_trading_sessions(
+    client: AlpacaClient, start_date: date_cls, end_date: date_cls
+) -> int:
+    if end_date < start_date:
+        return 0
+    try:
+        calendar = client.get_calendar(
+            start_date.isoformat(),
+            end_date.isoformat(),
+        )
+    except Exception:
+        return 0
+    return len(calendar)
+
+
+def _time_stop_due_trades(
+    client: AlpacaClient,
+    journal_path: str,
+    as_of_date: date_cls,
+    time_stop_days: int,
+    time_stop_min_r: float,
+) -> list[dict]:
+    if time_stop_days <= 0:
+        return []
+    rows = list(read_rows(journal_path))
+    open_rows = [row for row in rows if not row.get("exit_ts")]
+    due: list[dict] = []
+    for row in open_rows:
+        symbol = row.get("symbol", "").upper()
+        if not symbol:
+            continue
+        entry_ts = row.get("entry_ts")
+        if not entry_ts:
+            continue
+        try:
+            entry_dt = datetime.fromisoformat(entry_ts)
+        except ValueError:
+            continue
+        entry_date = entry_dt.date()
+        sessions = _count_trading_sessions(client, entry_date, as_of_date)
+        sessions_elapsed = max(0, sessions - 1)
+        if sessions_elapsed < time_stop_days:
+            continue
+        stop_price = _extract_stop_price(row.get("stop_loss_logic", ""))
+        if stop_price is None:
+            continue
+        try:
+            entry_price = float(row.get("entry_price") or 0)
+        except (TypeError, ValueError):
+            continue
+        risk = abs(entry_price - stop_price)
+        if risk <= 0:
+            continue
+        try:
+            current_price = _latest_close_price(client, symbol)
+        except Exception:
+            continue
+        direction = (row.get("direction") or "long").lower()
+        if direction == "short":
+            r_multiple = (entry_price - current_price) / risk
+        else:
+            r_multiple = (current_price - entry_price) / risk
+        if r_multiple >= time_stop_min_r:
+            continue
+        due.append(
+            {
+                "trade_id": row.get("trade_id", ""),
+                "symbol": symbol,
+                "setup_name": row.get("setup_name", ""),
+                "entry_ts": entry_ts,
+                "entry_price": entry_price,
+                "current_price": current_price,
+                "sessions_elapsed": sessions_elapsed,
+                "r_multiple": r_multiple,
+            }
+        )
+    return due
+
+
 def _estimate_entry_price(
     client: AlpacaClient,
     symbol: str,
@@ -302,6 +457,47 @@ def _estimate_entry_price(
     if order_type == "limit" and limit_price is not None:
         return float(limit_price)
     return _latest_close_price(client, symbol)
+
+
+def _derive_bracket_prices(
+    client: AlpacaClient,
+    symbol: str,
+    direction: str,
+    order_type: str,
+    limit_price: float | None,
+    stop_loss_logic: str,
+    take_profit_logic: str,
+) -> tuple[float | None, float | None, str]:
+    stop_price = _extract_stop_price(stop_loss_logic)
+    if stop_price is None:
+        return None, None, "could not parse stop price from stop_loss_logic"
+
+    target_price = _extract_price_in_parentheses(take_profit_logic)
+    if target_price is None:
+        r_multiple = _extract_r_multiple(take_profit_logic)
+        if r_multiple is None:
+            return None, None, "could not parse take profit from take_profit_logic"
+        entry_price = _estimate_entry_price(
+            client=client,
+            symbol=symbol,
+            order_type=order_type,
+            limit_price=limit_price,
+        )
+        risk = abs(entry_price - stop_price)
+        if risk <= 0:
+            return None, None, "invalid risk distance between entry and stop"
+        if direction == "long":
+            target_price = entry_price + (r_multiple * risk)
+        else:
+            target_price = entry_price - (r_multiple * risk)
+
+    if direction == "long":
+        if stop_price >= target_price:
+            return None, None, "invalid long bracket: stop must be below target"
+    else:
+        if stop_price <= target_price:
+            return None, None, "invalid short bracket: stop must be above target"
+    return float(stop_price), float(target_price), ""
 
 
 def _risk_guard(
@@ -454,6 +650,26 @@ def evaluate_and_trade(
         )
         print(f"Risk cap exceeded. Logged no-trade: log_id={log_id}")
         return None
+    stop_price, take_profit_price, bracket_error = _derive_bracket_prices(
+        client=client,
+        symbol=idea["symbol"],
+        direction=idea["direction"],
+        order_type=order_type,
+        limit_price=limit_price,
+        stop_loss_logic=idea["stop_loss_logic"],
+        take_profit_logic=idea["take_profit_logic"],
+    )
+    if bracket_error:
+        log_id = log_no_trade(
+            config.no_trade_journal_path,
+            symbol=symbol,
+            reason="Bracket derivation failed",
+            market_context=no_trade_context,
+            emotional_state=no_trade_emotion,
+            notes=bracket_error,
+        )
+        print(f"Bracket derivation failed. Logged no-trade: log_id={log_id}")
+        return None
 
     order = client.place_order(
         symbol=idea["symbol"],
@@ -461,12 +677,37 @@ def evaluate_and_trade(
         qty=config.fixed_position_size,
         order_type=order_type,
         limit_price=limit_price,
+        stop_loss_price=stop_price,
+        take_profit_price=take_profit_price,
     )
 
     trade_id = log_entry(
         journal_path=config.journal_path,
         idea=idea,
         order=order,
+    )
+    entry_price_est = _estimate_entry_price(
+        client=client,
+        symbol=idea["symbol"],
+        order_type=order_type,
+        limit_price=limit_price,
+    )
+    append_execution_event(
+        journal_path=config.execution_ledger_path,
+        sleeve_id=config.sleeve_id,
+        source="trade",
+        signal_id="",
+        trade_id=trade_id,
+        order_id=order.order_id,
+        symbol=idea["symbol"],
+        side="buy" if idea["direction"] == "long" else "sell",
+        qty=float(config.fixed_position_size),
+        order_type=order_type,
+        status="submitted",
+        entry_price_est=entry_price_est,
+        stop_loss_price=stop_price,
+        take_profit_price=take_profit_price,
+        notes=f"config={config.config_path}",
     )
     print(f"Logged entry: trade_id={trade_id}")
     return trade_id
@@ -643,6 +884,7 @@ def handle_review(config: AppConfig, args: argparse.Namespace) -> None:
 
 
 def handle_daily_report(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
     if args.date:
         if "T" in args.date:
             target_date = datetime.fromisoformat(args.date).date()
@@ -677,6 +919,14 @@ def handle_daily_report(config: AppConfig, args: argparse.Namespace) -> None:
         status = row.get("status") or "unknown"
         status_counts[status] = status_counts.get(status, 0) + 1
 
+    time_stop_due = _time_stop_due_trades(
+        client=client,
+        journal_path=config.journal_path,
+        as_of_date=target_date,
+        time_stop_days=config.time_stop_days,
+        time_stop_min_r=config.time_stop_min_r,
+    )
+
     lines = []
     lines.append(f"Daily report ({target_date.isoformat()})")
     lines.append("")
@@ -710,6 +960,30 @@ def handle_daily_report(config: AppConfig, args: argparse.Namespace) -> None:
                 )
             )
 
+    lines.append("")
+    lines.append("Time-stop watch")
+    lines.append("")
+    lines.append(f"- time_stop_days: {config.time_stop_days}")
+    lines.append(f"- time_stop_min_r: {config.time_stop_min_r:.2f}")
+    lines.append(f"- time_stop_due: {len(time_stop_due)}")
+    if time_stop_due:
+        lines.append("")
+        lines.append("Time-stop due")
+        lines.append("")
+        for row in time_stop_due:
+            lines.append(
+                "- {symbol} trade_id={trade_id} sessions={sessions} "
+                "r={r_multiple:.2f} entry={entry_price:.2f} "
+                "current={current_price:.2f}".format(
+                    symbol=row.get("symbol"),
+                    trade_id=row.get("trade_id"),
+                    sessions=row.get("sessions_elapsed"),
+                    r_multiple=row.get("r_multiple", 0),
+                    entry_price=row.get("entry_price", 0),
+                    current_price=row.get("current_price", 0),
+                )
+            )
+
     output_dir = args.output_dir
     output_path = (
         f"{output_dir}/{target_date.isoformat()}_daily.md"
@@ -722,6 +996,7 @@ def handle_daily_report(config: AppConfig, args: argparse.Namespace) -> None:
 def handle_sync(config: AppConfig, args: argparse.Namespace) -> None:
     client = AlpacaClient(config)
     order_list = build_order_list(client, args.limit)
+    ledger_updates = _reconcile_execution_ledger(config, client)
     updated_entries = sync_entry_prices(config.journal_path, order_list)
     updated_trade_ids = sync_exits(config.journal_path, order_list)
     applied_reviews = apply_pending_reviews(
@@ -749,6 +1024,7 @@ def handle_sync(config: AppConfig, args: argparse.Namespace) -> None:
         "Synced journal:"
         f" entry_prices={updated_entries} exit_fields={len(updated_trade_ids)}"
         f" applied_reviews={applied_reviews}"
+        f" ledger_updates={ledger_updates}"
     )
 
 
@@ -949,6 +1225,46 @@ def handle_signal_queue(config: AppConfig, args: argparse.Namespace) -> None:
             print(f"emotional_state: {row.get('emotional_state')}")
 
 
+def handle_execution_ledger(config: AppConfig, args: argparse.Namespace) -> None:
+    rows = list_execution_ledger(config.execution_ledger_path)
+    if args.sleeve:
+        rows = [row for row in rows if row.get("sleeve_id") == args.sleeve]
+    if args.status:
+        rows = [row for row in rows if str(row.get("status", "")).lower() == args.status]
+    if not rows:
+        print("No execution ledger rows found.")
+        return
+    rows = sorted(rows, key=lambda row: row.get("created_ts", ""))
+    if args.limit and args.limit > 0:
+        rows = rows[-args.limit :]
+    for row in rows:
+        print(
+            "event:"
+            f" ts={row.get('created_ts')}"
+            f" sleeve={row.get('sleeve_id')}"
+            f" source={row.get('source')}"
+            f" symbol={row.get('symbol')}"
+            f" side={row.get('side')}"
+            f" qty={row.get('qty')}"
+            f" status={row.get('status')}"
+            f" order_id={row.get('order_id')}"
+        )
+        if args.verbose:
+            print(
+                "details:"
+                f" signal_id={row.get('signal_id')}"
+                f" trade_id={row.get('trade_id')}"
+                f" order_type={row.get('order_type')}"
+                f" order_class={row.get('order_class')}"
+                f" filled_qty={row.get('filled_qty')}"
+                f" filled_avg_price={row.get('filled_avg_price')}"
+                f" filled_at={row.get('filled_at')}"
+                f" stop_loss_price={row.get('stop_loss_price')}"
+                f" take_profit_price={row.get('take_profit_price')}"
+                f" notes={row.get('notes')}"
+            )
+
+
 def handle_approve_signal(config: AppConfig, args: argparse.Namespace) -> None:
     client = AlpacaClient(config)
     rows = list_signal_queue(config.signal_queue_path, status="pending")
@@ -1002,6 +1318,27 @@ def handle_approve_signal(config: AppConfig, args: argparse.Namespace) -> None:
             f"reason={risk_message}"
         )
         return
+    stop_price, take_profit_price, bracket_error = _derive_bracket_prices(
+        client=client,
+        symbol=match["symbol"],
+        direction=match["direction"],
+        order_type=order_type,
+        limit_price=limit_price,
+        stop_loss_logic=match["stop_loss_logic"],
+        take_profit_logic=match["take_profit_logic"],
+    )
+    if bracket_error:
+        update_signal_status(
+            config.signal_queue_path,
+            signal_id=args.signal_id,
+            status="ignored",
+            decision_reason=f"bracket derivation failed: {bracket_error}",
+        )
+        print(
+            f"Signal ignored due to bracket derivation: signal_id={args.signal_id} "
+            f"reason={bracket_error}"
+        )
+        return
     idea = {
         "symbol": match["symbol"],
         "direction": match["direction"],
@@ -1019,11 +1356,36 @@ def handle_approve_signal(config: AppConfig, args: argparse.Namespace) -> None:
         qty=qty,
         order_type=order_type,
         limit_price=limit_price,
+        stop_loss_price=stop_price,
+        take_profit_price=take_profit_price,
     )
     trade_id = log_entry(
         journal_path=config.journal_path,
         idea=idea,
         order=order,
+    )
+    entry_price_est = _estimate_entry_price(
+        client=client,
+        symbol=idea["symbol"],
+        order_type=order_type,
+        limit_price=limit_price,
+    )
+    append_execution_event(
+        journal_path=config.execution_ledger_path,
+        sleeve_id=config.sleeve_id,
+        source="approve-signal",
+        signal_id=args.signal_id,
+        trade_id=trade_id,
+        order_id=order.order_id,
+        symbol=idea["symbol"],
+        side="buy" if idea["direction"] == "long" else "sell",
+        qty=qty,
+        order_type=order_type,
+        status="submitted",
+        entry_price_est=entry_price_est,
+        stop_loss_price=stop_price,
+        take_profit_price=take_profit_price,
+        notes=f"config={config.config_path}",
     )
     update_signal_status(
         config.signal_queue_path,
@@ -1999,6 +2361,13 @@ def handle_ops_report(config: AppConfig, args: argparse.Namespace) -> None:
     client = AlpacaClient(config)
     open_exposure = _open_exposure_usd(client)
     open_risk = _open_risk_to_stops_usd(client, config.journal_path)
+    time_stop_due = _time_stop_due_trades(
+        client=client,
+        journal_path=config.journal_path,
+        as_of_date=date_cls.today(),
+        time_stop_days=config.time_stop_days,
+        time_stop_min_r=config.time_stop_min_r,
+    )
     pending_reviews = len(list_review_queue(config.review_queue_path))
     pending_signals = len(list_signal_queue(config.signal_queue_path, status="pending"))
     metrics = _go_live_metrics(
@@ -2027,6 +2396,7 @@ def handle_ops_report(config: AppConfig, args: argparse.Namespace) -> None:
         f"open_risk_to_stops_usd: {open_risk:.2f}",
         f"max_capital_usd: {config.max_capital_usd:.2f}",
         f"max_total_open_risk_usd: {config.max_total_open_risk_usd:.2f}",
+        f"time_stop_due: {len(time_stop_due)}",
         f"pending_reviews: {pending_reviews}",
         f"pending_signals: {pending_signals}",
         "",
@@ -2440,6 +2810,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="Show full signal details",
+    )
+
+    execution_ledger_parser = subparsers.add_parser(
+        "execution-ledger", help="Show code-side execution ledger rows"
+    )
+    execution_ledger_parser.add_argument(
+        "--sleeve",
+        default=None,
+        help="Filter by sleeve_id",
+    )
+    execution_ledger_parser.add_argument(
+        "--status",
+        default=None,
+        help="Filter by order status (e.g. new, accepted, filled, canceled)",
+    )
+    execution_ledger_parser.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Show at most N most recent rows",
+    )
+    execution_ledger_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show detailed fields",
     )
 
     approve_signal_parser = subparsers.add_parser(
@@ -3200,6 +3595,7 @@ def main() -> None:
     init_pending_reviews(config.pending_reviews_path)
     init_review_queue(config.review_queue_path)
     init_signal_queue(config.signal_queue_path)
+    init_execution_ledger(config.execution_ledger_path)
 
     if args.command == "trade":
         handle_trade(config, args)
@@ -3223,6 +3619,8 @@ def main() -> None:
         handle_daily_report(config, args)
     elif args.command == "signal-queue":
         handle_signal_queue(config, args)
+    elif args.command == "execution-ledger":
+        handle_execution_ledger(config, args)
     elif args.command == "approve-signal":
         handle_approve_signal(config, args)
     elif args.command == "ignore-signal":

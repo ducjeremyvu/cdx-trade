@@ -1,0 +1,8 @@
+signal_id=bd347946-5c45-498d-8d53-c223a6fec878 status=ignored SPY long setup=MeanReversion_D1 created=2026-01-30T13:03:48.861528+00:00
+signal_details: order_type=market limit_price= qty=1
+entry_reason: Using completed daily bars due to 15-min delayed data; yesterday close < prior day low
+invalidation_reason: Closes below yesterday low
+stop_loss_logic: Below yesterday low (684.85)
+take_profit_logic: 2R target
+market_context: range
+emotional_state: calm

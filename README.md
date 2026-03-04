@@ -20,6 +20,10 @@ Multi-sleeve 1k setup
   - `configs/etf_breakout_1k.json`
   - `configs/etf_meanrev_1k.json`
 - Each sleeve writes to its own data folder under `data/sleeves/...`.
+- Sleeves are tracked code-side via:
+  - `sleeve_id` (defaults to config filename stem)
+  - `execution_ledger_path` (defaults to `data/execution_ledger.csv`)
+- Every new trade/approved signal appends an execution row; `sync` reconciles fill/cancel status from Alpaca.
 - Run any command against a sleeve:
   - `uv run python main.py --config configs/etf_core_1k.json scan`
   - `uv run python main.py --config configs/etf_breakout_1k.json signal --symbol XME`
@@ -27,6 +31,23 @@ Multi-sleeve 1k setup
   - List sleeves: `uv run python scripts/run_sleeve.py --list`
   - Run command: `uv run python scripts/run_sleeve.py --sleeve etf_core_1k -- scan`
   - Run command: `uv run python scripts/run_sleeve.py --sleeve etf_meanrev_1k -- ops-report`
+  - Run command: `uv run python scripts/run_sleeve.py --sleeve equity_core_1k -- scan`
+  - Run command: `uv run python scripts/run_sleeve.py --sleeve volatility_etf_1k -- scan`
+- Inspect execution flow: `uv run python main.py --config configs/etf_core_1k.json execution-ledger --limit 20 --verbose`
+
+Multi-sleeve auto allocator
+- Run full cycle (sync, scan, assess pending, allocate approvals):
+  - Dry-run: `uv run python scripts/run_multi_sleeve.py`
+  - Execute approvals: `uv run python scripts/run_multi_sleeve.py --execute`
+  - Execute + ignore rejects: `uv run python scripts/run_multi_sleeve.py --execute --ignore-rejects`
+  - Aggressive data-collection: `uv run python scripts/run_multi_sleeve.py --execute --ignore-rejects --aggressive`
+
+Daily cadence runner
+- Open routine: `uv run python scripts/run_cadence.py --phase open`
+- Midday routine: `uv run python scripts/run_cadence.py --phase midday`
+- Close routine: `uv run python scripts/run_cadence.py --phase close`
+- Full day sequence: `uv run python scripts/run_cadence.py --phase full`
+- Preview only: `uv run python scripts/run_cadence.py --phase open --dry-run`
 
 Run
 - Place a trade idea (daily breakout): `python main.py trade --symbol SPY`

@@ -1,0 +1,2 @@
+signal_id,created_ts,symbol,direction,setup_name,entry_reason,invalidation_reason,stop_loss_logic,take_profit_logic,market_context,emotional_state,order_type,limit_price,qty,status,decision_ts,decision_reason
+bed97ec0-383c-4b5f-94a0-def37891248e,2026-02-27T18:14:37.980561+00:00,META,long,PrevDayBreakout_D1,Using completed daily bars due to 15-min delayed data; yesterday close > prior day high,Closes back below prior day high,Below prior day low (642.49),2R target,trend,calm,market,,1,pending,,

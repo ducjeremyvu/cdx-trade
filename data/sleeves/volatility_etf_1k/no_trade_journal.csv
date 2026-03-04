@@ -1,0 +1,14 @@
+log_id,symbol,timestamp,reason,market_context,emotional_state,notes
+925ab0fe-5ad3-4854-8751-8e100526e0be,TQQQ,2026-02-27T17:03:09.904528+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): win_rate 0.41 < 0.48
+d7545fd0-c560-40ed-876b-8d78e3850071,SOXL,2026-02-27T17:03:11.494654+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): win_rate 0.47 < 0.48
+6b1da991-5d58-49b0-846e-6463c33d245e,SPXL,2026-02-27T17:03:13.718471+00:00,No valid setup,unclear,calm,
+6b141e51-e159-4bbf-87be-b8907c9df653,UPRO,2026-02-27T17:03:14.747914+00:00,No valid setup,unclear,calm,
+ab2b791a-1161-43d9-a476-71eb507bb308,TMF,2026-02-27T17:03:15.521340+00:00,No valid setup,unclear,calm,
+93bb825f-0c62-4e69-ad5d-bee24dc0a3c7,TQQQ,2026-02-27T18:14:45.481399+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): win_rate 0.41 < 0.48
+422a38ee-404d-4c19-9c90-c681ea500a01,SOXL,2026-02-27T18:14:47.304320+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): win_rate 0.47 < 0.48
+6d3bb7a4-0157-4565-94a3-5d370eb9a860,SPXL,2026-02-27T18:14:48.261152+00:00,No valid setup,unclear,calm,
+ab00d869-48f6-4d49-9bd4-0d13ea2ac7c0,UPRO,2026-02-27T18:14:49.191754+00:00,No valid setup,unclear,calm,
+32cfa713-e68c-4351-97ca-d1b6e71008d1,TMF,2026-02-27T18:14:50.096022+00:00,No valid setup,unclear,calm,
+52163d5f-307e-42bc-b74e-a0521d47a9f9,UVXY,2026-02-27T18:14:51.176376+00:00,No valid setup,unclear,calm,
+9e60890e-36cc-4a27-be2d-ecb2cdc89a2a,SVXY,2026-02-27T18:14:52.037272+00:00,No valid setup,unclear,calm,
+bf377a34-b773-4043-aefd-4a2b723c55e8,BITO,2026-02-27T18:14:54.138583+00:00,No valid setup,unclear,calm,

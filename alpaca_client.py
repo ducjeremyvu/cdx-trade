@@ -12,8 +12,10 @@ from alpaca.trading.requests import (
     GetOrdersRequest,
     LimitOrderRequest,
     MarketOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
 )
-from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
 
 import pandas as pd
 
@@ -47,9 +49,16 @@ class AlpacaClient:
         qty: float,
         order_type: str = "market",
         limit_price: float | None = None,
+        stop_loss_price: float | None = None,
+        take_profit_price: float | None = None,
     ) -> AlpacaOrderResult:
         if order_type == "limit" and limit_price is None:
             raise ValueError("limit_price is required for limit orders")
+        if stop_loss_price is None or take_profit_price is None:
+            raise ValueError("stop_loss_price and take_profit_price are required")
+
+        stop_loss = StopLossRequest(stop_price=float(stop_loss_price))
+        take_profit = TakeProfitRequest(limit_price=float(take_profit_price))
 
         if order_type == "market":
             request = MarketOrderRequest(
@@ -57,6 +66,9 @@ class AlpacaClient:
                 qty=qty,
                 side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
                 time_in_force=TimeInForce.DAY,
+                order_class=OrderClass.BRACKET,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
             )
         else:
             request = LimitOrderRequest(
@@ -65,6 +77,9 @@ class AlpacaClient:
                 side=OrderSide.BUY if side == "buy" else OrderSide.SELL,
                 time_in_force=TimeInForce.DAY,
                 limit_price=limit_price,
+                order_class=OrderClass.BRACKET,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
             )
 
         order = self._trading.submit_order(request)
