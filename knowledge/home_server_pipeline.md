@@ -24,6 +24,38 @@ Each run contains:
 - `logs/` (command logs)
 - `manifest.json` (run metadata, size, key portfolio stats)
 
+Nightly automation now also runs:
+- signal generation across configured symbols
+- pending signal prioritization (`max_keep` + `min_score`)
+- top pending auto-approval
+- `time-stop` and `momentum` auto-close actions
+- decision quality and weekly profile compare summaries
+
+## Notification setup (email)
+
+Nightly pipeline sends one status email (success/failure) from the server if SMTP vars are configured.
+
+Required `.env` entries on server:
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=bot@example.com
+SMTP_PASSWORD=app-password
+SMTP_FROM=bot@example.com
+SMTP_TO=you@example.com
+SMTP_USE_TLS=true
+```
+
+Optional nightly policy vars:
+
+```bash
+CONFIG_PATH=configs/etf_core_1k.json
+MAX_PENDING_KEEP=1
+MIN_PENDING_SCORE=0.00
+PENDING_SCORE_LOOKBACK_DAYS=180
+```
+
 ## Scripts
 
 - Server pipeline: `scripts/home_server/run_nightly.sh`
@@ -45,6 +77,13 @@ sudo cp scripts/home_server/systemd/cdx-trade-nightly.service /etc/systemd/syste
 sudo cp scripts/home_server/systemd/cdx-trade-nightly.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cdx-trade-nightly.timer
+```
+
+Reload after editing service env:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart cdx-trade-nightly.timer
 ```
 
 ## Server setup commands (copy/paste)

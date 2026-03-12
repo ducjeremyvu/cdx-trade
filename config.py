@@ -43,6 +43,7 @@ class AppConfig:
     execution_ledger_path: str
     time_stop_days: int
     time_stop_min_r: float
+    run_stale_days: int
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -106,6 +107,12 @@ class AppConfig:
             os.getenv(
                 "TIME_STOP_MIN_R",
                 str(config_data.get("time_stop_min_r", 1.0)),
+            )
+        )
+        run_stale_days = int(
+            os.getenv(
+                "RUN_STALE_DAYS",
+                str(config_data.get("run_stale_days", 2)),
             )
         )
         enabled_setups_raw = os.getenv("ENABLED_SETUPS", "").strip()
@@ -299,6 +306,7 @@ class AppConfig:
             execution_ledger_path=execution_ledger_path,
             time_stop_days=time_stop_days,
             time_stop_min_r=time_stop_min_r,
+            run_stale_days=run_stale_days,
             watch_only_symbols=watch_only_symbols,
             universe_path=universe_path,
             regime_filter_enabled=regime_filter_enabled,

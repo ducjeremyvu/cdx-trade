@@ -83,6 +83,7 @@
   "economics_projection_window_days": 90,
   "time_stop_days": 10,
   "time_stop_min_r": 1.0,
+  "run_stale_days": 2,
   "watch_only_symbols": [
     "SPY"
   ],

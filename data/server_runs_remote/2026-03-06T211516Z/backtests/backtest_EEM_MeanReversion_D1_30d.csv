@@ -1,0 +1,4 @@
+symbol,setup_name,signal_ts,entry_ts,entry_price,stop_price,target_price,exit_ts,exit_price,exit_reason,r_multiple,outcome
+EEM,MeanReversion_D1,2026-02-05T00:00:00-05:00,2026-02-06T00:00:00-05:00,59.245,58.22,61.295,2026-02-11T00:00:00-05:00,61.295,TP hit,2.0,win
+EEM,MeanReversion_D1,2026-02-26T00:00:00-05:00,2026-02-27T00:00:00-05:00,62.19,62.09,62.39,2026-02-27T00:00:00-05:00,62.39,TP hit,2.0,win
+EEM,MeanReversion_D1,2026-03-03T00:00:00-05:00,2026-03-04T00:00:00-05:00,58.52,56.74,62.08,2026-03-05T00:00:00-05:00,57.66,time stop loss,-0.4831,loss

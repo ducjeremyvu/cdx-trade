@@ -448,6 +448,187 @@ def _time_stop_due_trades(
     return due
 
 
+def _momentum_exit_due_trades(
+    client: AlpacaClient,
+    journal_path: str,
+    min_r_multiple: float = 1.0,
+) -> list[dict]:
+    rows = list(read_rows(journal_path))
+    open_rows = [row for row in rows if not row.get("exit_ts")]
+    due: list[dict] = []
+    for row in open_rows:
+        symbol = row.get("symbol", "").upper()
+        if not symbol:
+            continue
+        stop_price = _extract_stop_price(row.get("stop_loss_logic", ""))
+        if stop_price is None:
+            continue
+        try:
+            entry_price = float(row.get("entry_price") or 0)
+        except (TypeError, ValueError):
+            continue
+        risk = abs(entry_price - stop_price)
+        if risk <= 0:
+            continue
+        bars = client.get_recent_daily_bars(symbol, days=8)
+        if bars is None or bars.empty:
+            continue
+        bars = bars.reset_index().sort_values("timestamp")
+        if len(bars) < 2:
+            continue
+        current_close = float(bars.iloc[-1]["close"])
+        prev_close = float(bars.iloc[-2]["close"])
+        direction = (row.get("direction") or "long").lower()
+        if direction == "short":
+            current_r = (entry_price - current_close) / risk
+            momentum_weak = current_close > prev_close
+        else:
+            current_r = (current_close - entry_price) / risk
+            momentum_weak = current_close < prev_close
+        if current_r < min_r_multiple or not momentum_weak:
+            continue
+        due.append(
+            {
+                "trade_id": row.get("trade_id", ""),
+                "symbol": symbol,
+                "setup_name": row.get("setup_name", ""),
+                "entry_price": entry_price,
+                "current_price": current_close,
+                "r_multiple": current_r,
+                "direction": direction,
+                "stop_loss_logic": row.get("stop_loss_logic", ""),
+            }
+        )
+    return due
+
+
+def _safe_recent_backtest_score(
+    client: AlpacaClient,
+    symbol: str,
+    setup_name: str,
+    lookback_days: int = 180,
+    risk_multiple: float = 2.0,
+    time_stop_days: int = 5,
+    regime_filter: dict | None = None,
+) -> tuple[float, int, float, float]:
+    output_path = (
+        f"/tmp/signal_score_{symbol}_{setup_name}_{int(time.time() * 1_000_000)}.csv"
+    )
+    try:
+        result = run_recent_backtest(
+            client=client,
+            symbol=symbol,
+            recent_days=lookback_days,
+            risk_multiple=risk_multiple,
+            time_stop_days=time_stop_days,
+            output_path=output_path,
+            setup_name=setup_name,
+            regime_filter=regime_filter,
+        )
+    except Exception:
+        return -999.0, 0, 0.0, 0.0
+    score = float(result.avg_r) * float(result.win_rate)
+    return score, int(result.total_trades), float(result.avg_r), float(result.win_rate)
+
+
+def _prioritize_pending_signals(
+    client: AlpacaClient,
+    config: AppConfig,
+    max_keep: int,
+    min_score: float,
+    lookback_days: int,
+) -> list[dict]:
+    rows = list_signal_queue(config.signal_queue_path, status="pending")
+    if not rows:
+        return []
+    scored: list[dict] = []
+    for row in rows:
+        score, trades, avg_r, win_rate = _safe_recent_backtest_score(
+            client=client,
+            symbol=row["symbol"],
+            setup_name=row["setup_name"],
+            lookback_days=lookback_days,
+            risk_multiple=2.0,
+            time_stop_days=config.time_stop_days,
+            regime_filter=_regime_filter(config),
+        )
+        entry = dict(row)
+        entry["rank_score"] = score
+        entry["rank_trades"] = trades
+        entry["rank_avg_r"] = avg_r
+        entry["rank_win_rate"] = win_rate
+        scored.append(entry)
+    scored.sort(key=lambda row: float(row.get("rank_score", -999.0)), reverse=True)
+    keep = set()
+    for row in scored:
+        if len(keep) >= max_keep:
+            break
+        if float(row.get("rank_score", -999.0)) < min_score:
+            continue
+        keep.add(row["signal_id"])
+
+    ignored: list[dict] = []
+    for row in scored:
+        signal_id = row["signal_id"]
+        if signal_id in keep:
+            continue
+        reason = (
+            f"auto-priority: score={row['rank_score']:.4f} "
+            f"avg_r={row['rank_avg_r']:.2f} win_rate={row['rank_win_rate']:.2f} "
+            f"trades={row['rank_trades']} min_score={min_score:.4f} "
+            f"max_keep={max_keep}"
+        )
+        update_signal_status(
+            config.signal_queue_path,
+            signal_id=signal_id,
+            status="ignored",
+            decision_reason=reason,
+        )
+        ignored.append(row)
+    return scored
+
+
+def _time_stop_close_command(config: AppConfig, symbol: str) -> str:
+    base = "CONFIG_PATH={}".format(config.config_path)
+    return "{} uv run python main.py time-stop-close --execute --symbol {}".format(
+        base, symbol
+    )
+
+
+def _compute_r_multiple(
+    entry_price: float,
+    stop_price: float,
+    exit_price: float,
+    direction: str,
+) -> float:
+    risk = abs(entry_price - stop_price)
+    if risk <= 0:
+        return 0.0
+    if direction.lower() == "short":
+        return (entry_price - exit_price) / risk
+    return (exit_price - entry_price) / risk
+
+
+def _parse_run_id_timestamp(run_id: str) -> datetime | None:
+    if not run_id:
+        return None
+    try:
+        return datetime.strptime(run_id, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _load_last_fetch_status(local_root: str) -> dict | None:
+    path = os.path.join(local_root, "_meta", "last_fetch.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def _estimate_entry_price(
     client: AlpacaClient,
     symbol: str,
@@ -926,6 +1107,11 @@ def handle_daily_report(config: AppConfig, args: argparse.Namespace) -> None:
         time_stop_days=config.time_stop_days,
         time_stop_min_r=config.time_stop_min_r,
     )
+    momentum_due = _momentum_exit_due_trades(
+        client=client,
+        journal_path=config.journal_path,
+        min_r_multiple=1.0,
+    )
 
     lines = []
     lines.append(f"Daily report ({target_date.isoformat()})")
@@ -982,6 +1168,45 @@ def handle_daily_report(config: AppConfig, args: argparse.Namespace) -> None:
                     entry_price=row.get("entry_price", 0),
                     current_price=row.get("current_price", 0),
                 )
+            )
+        lines.append("")
+        lines.append("Time-stop actions")
+        lines.append("")
+        for row in time_stop_due:
+            symbol = row.get("symbol")
+            if not symbol:
+                continue
+            lines.append(f"- {symbol}: {_time_stop_close_command(config, symbol)}")
+    lines.append("")
+    lines.append("Momentum-exit watch")
+    lines.append("")
+    lines.append("- momentum_min_r: 1.00")
+    lines.append(f"- momentum_exit_due: {len(momentum_due)}")
+    if momentum_due:
+        lines.append("")
+        lines.append("Momentum-exit due")
+        lines.append("")
+        for row in momentum_due:
+            lines.append(
+                "- {symbol} trade_id={trade_id} r={r_multiple:.2f} "
+                "entry={entry_price:.2f} current={current_price:.2f}".format(
+                    symbol=row.get("symbol"),
+                    trade_id=row.get("trade_id"),
+                    r_multiple=row.get("r_multiple", 0),
+                    entry_price=row.get("entry_price", 0),
+                    current_price=row.get("current_price", 0),
+                )
+            )
+        lines.append("")
+        lines.append("Momentum-exit actions")
+        lines.append("")
+        for row in momentum_due:
+            symbol = row.get("symbol")
+            if not symbol:
+                continue
+            lines.append(
+                f"- {symbol}: CONFIG_PATH={config.config_path} "
+                f"uv run python main.py momentum-close --execute --symbol {symbol}"
             )
 
     output_dir = args.output_dir
@@ -1102,6 +1327,45 @@ def handle_run_daily(config: AppConfig, args: argparse.Namespace) -> None:
                     args.no_trade_emotion,
                     args.no_trade_notes,
                 )
+        if args.mode == "propose" and args.auto_prioritize_pending:
+            scored = _prioritize_pending_signals(
+                client=client,
+                config=config,
+                max_keep=args.max_pending_keep,
+                min_score=args.min_pending_score,
+                lookback_days=args.pending_score_lookback_days,
+            )
+            if scored:
+                print(
+                    "pending_priority_applied:"
+                    f" pending_before={len(scored)}"
+                    f" max_keep={args.max_pending_keep}"
+                    f" min_score={args.min_pending_score:.4f}"
+                )
+        if args.auto_time_stop_close:
+            handle_time_stop_close(
+                config,
+                argparse.Namespace(
+                    date=None,
+                    symbol=None,
+                    symbols=None,
+                    time_stop_days=None,
+                    time_stop_min_r=None,
+                    wait_seconds=10,
+                    execute=True,
+                ),
+            )
+        if args.auto_momentum_close:
+            handle_momentum_close(
+                config,
+                argparse.Namespace(
+                    min_r_multiple=args.momentum_min_r,
+                    symbol=None,
+                    symbols=None,
+                    wait_seconds=10,
+                    execute=True,
+                ),
+            )
         if args.weekly_snapshot:
             now = datetime.now(timezone.utc)
             if now.weekday() == args.weekly_snapshot_day:
@@ -1181,6 +1445,21 @@ def handle_run_once(config: AppConfig, args: argparse.Namespace) -> None:
                 args.no_trade_context,
                 args.no_trade_emotion,
                 args.no_trade_notes,
+            )
+    if args.mode == "propose" and args.auto_prioritize_pending:
+        scored = _prioritize_pending_signals(
+            client=client,
+            config=config,
+            max_keep=args.max_pending_keep,
+            min_score=args.min_pending_score,
+            lookback_days=args.pending_score_lookback_days,
+        )
+        if scored:
+            print(
+                "pending_priority_applied:"
+                f" pending_before={len(scored)}"
+                f" max_keep={args.max_pending_keep}"
+                f" min_score={args.min_pending_score:.4f}"
             )
 
 
@@ -1453,6 +1732,395 @@ def handle_close_position(config: AppConfig, args: argparse.Namespace) -> None:
         "Close submitted but not filled yet."
         f" Added pending review for trade_id={trade_id}"
     )
+
+
+def handle_time_stop_close(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    if args.date:
+        if "T" in args.date:
+            as_of_date = datetime.fromisoformat(args.date).date()
+        else:
+            as_of_date = date_cls.fromisoformat(args.date)
+    else:
+        as_of_date = datetime.now(timezone.utc).date()
+    time_stop_days = (
+        args.time_stop_days if args.time_stop_days is not None else config.time_stop_days
+    )
+    time_stop_min_r = (
+        args.time_stop_min_r if args.time_stop_min_r is not None else config.time_stop_min_r
+    )
+    due = _time_stop_due_trades(
+        client=client,
+        journal_path=config.journal_path,
+        as_of_date=as_of_date,
+        time_stop_days=time_stop_days,
+        time_stop_min_r=time_stop_min_r,
+    )
+    target_symbols: set[str] = set()
+    if args.symbol:
+        target_symbols.add(args.symbol.strip().upper())
+    if args.symbols:
+        target_symbols |= {
+            value.strip().upper()
+            for value in args.symbols.split(",")
+            if value.strip()
+        }
+    if target_symbols:
+        due = [row for row in due if row.get("symbol") in target_symbols]
+    if not due:
+        print("No time-stop due trades.")
+        return
+    print(f"time_stop_due: {len(due)}")
+    for row in due:
+        print(
+            "- {symbol} trade_id={trade_id} sessions={sessions} r={r_multiple:.2f}".format(
+                symbol=row.get("symbol"),
+                trade_id=row.get("trade_id"),
+                sessions=row.get("sessions_elapsed"),
+                r_multiple=row.get("r_multiple", 0),
+            )
+        )
+    if not args.execute:
+        print("Dry run only. Re-run with --execute to submit closes.")
+        return
+    for row in due:
+        symbol = row.get("symbol")
+        if not symbol:
+            continue
+        trade_id = find_open_trade_id(config.journal_path, symbol)
+        if not trade_id:
+            print(f"Skip {symbol}: no open trade found in journal.")
+            continue
+        order = client.close_position(symbol)
+        order_id = str(order.id)
+        deadline = time.time() + args.wait_seconds
+        filled = None
+        while time.time() < deadline:
+            refreshed = client.get_order(order_id)
+            if refreshed.filled_avg_price and refreshed.filled_at:
+                filled = refreshed
+                break
+            time.sleep(1)
+        if filled:
+            stop_price = _extract_stop_price(row.get("stop_loss_logic", ""))
+            entry_price = float(row.get("entry_price") or 0)
+            exit_price = float(filled.filled_avg_price)
+            direction = row.get("direction") or "long"
+            r_multiple = (
+                _compute_r_multiple(entry_price, stop_price, exit_price, direction)
+                if stop_price is not None
+                else 0.0
+            )
+            if r_multiple > 0:
+                outcome = "win"
+            elif r_multiple < 0:
+                outcome = "loss"
+            else:
+                outcome = "scratch"
+            log_exit(
+                journal_path=config.journal_path,
+                trade_id=trade_id,
+                exit_ts=filled.filled_at.isoformat(),
+                exit_price=exit_price,
+                outcome=outcome,
+                r_multiple=r_multiple,
+                exit_reason="time_stop",
+                what_went_right="",
+                what_went_wrong="",
+                improvement_idea="",
+                exit_order_id=order_id,
+            )
+            print(f"Closed time-stop trade: trade_id={trade_id}")
+            continue
+
+        add_pending_review(
+            config.pending_reviews_path,
+            trade_id=trade_id,
+            outcome="scratch",
+            r_multiple=0.0,
+            exit_reason="time_stop",
+            what_went_right="",
+            what_went_wrong="",
+            improvement_idea="",
+        )
+        print(
+            "Time-stop close submitted but not filled yet."
+            f" Added pending review for trade_id={trade_id}"
+        )
+
+
+def handle_momentum_close(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    due = _momentum_exit_due_trades(
+        client=client,
+        journal_path=config.journal_path,
+        min_r_multiple=args.min_r_multiple,
+    )
+    target_symbols: set[str] = set()
+    if getattr(args, "symbol", None):
+        target_symbols.add(args.symbol.strip().upper())
+    if getattr(args, "symbols", None):
+        target_symbols |= {
+            value.strip().upper()
+            for value in args.symbols.split(",")
+            if value.strip()
+        }
+    if target_symbols:
+        due = [row for row in due if row.get("symbol") in target_symbols]
+    if not due:
+        print("No momentum-exit due trades.")
+        return
+    print(f"momentum_exit_due: {len(due)}")
+    for row in due:
+        print(
+            "- {symbol} trade_id={trade_id} r={r_multiple:.2f}".format(
+                symbol=row.get("symbol"),
+                trade_id=row.get("trade_id"),
+                r_multiple=row.get("r_multiple", 0),
+            )
+        )
+    if not args.execute:
+        print("Dry run only. Re-run with --execute to submit closes.")
+        return
+
+    for row in due:
+        symbol = row.get("symbol")
+        if not symbol:
+            continue
+        trade_id = find_open_trade_id(config.journal_path, symbol)
+        if not trade_id:
+            print(f"Skip {symbol}: no open trade found in journal.")
+            continue
+        order = client.close_position(symbol)
+        order_id = str(order.id)
+        deadline = time.time() + args.wait_seconds
+        filled = None
+        while time.time() < deadline:
+            refreshed = client.get_order(order_id)
+            if refreshed.filled_avg_price and refreshed.filled_at:
+                filled = refreshed
+                break
+            time.sleep(1)
+        if filled:
+            stop_price = _extract_stop_price(row.get("stop_loss_logic", ""))
+            entry_price = float(row.get("entry_price") or 0)
+            exit_price = float(filled.filled_avg_price)
+            direction = row.get("direction") or "long"
+            r_multiple = (
+                _compute_r_multiple(entry_price, stop_price, exit_price, direction)
+                if stop_price is not None
+                else 0.0
+            )
+            if r_multiple > 0:
+                outcome = "win"
+            elif r_multiple < 0:
+                outcome = "loss"
+            else:
+                outcome = "scratch"
+            log_exit(
+                journal_path=config.journal_path,
+                trade_id=trade_id,
+                exit_ts=filled.filled_at.isoformat(),
+                exit_price=exit_price,
+                outcome=outcome,
+                r_multiple=r_multiple,
+                exit_reason="momentum_exit",
+                what_went_right="",
+                what_went_wrong="",
+                improvement_idea="",
+                exit_order_id=order_id,
+            )
+            print(f"Closed momentum-exit trade: trade_id={trade_id}")
+            continue
+        add_pending_review(
+            config.pending_reviews_path,
+            trade_id=trade_id,
+            outcome="scratch",
+            r_multiple=0.0,
+            exit_reason="momentum_exit",
+            what_went_right="",
+            what_went_wrong="",
+            improvement_idea="",
+        )
+        print(
+            "Momentum close submitted but not filled yet."
+            f" Added pending review for trade_id={trade_id}"
+        )
+
+
+def handle_prioritize_pending(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    scored = _prioritize_pending_signals(
+        client=client,
+        config=config,
+        max_keep=args.max_keep,
+        min_score=args.min_score,
+        lookback_days=args.lookback_days,
+    )
+    if not scored:
+        print("No pending signals to prioritize.")
+        return
+    print(
+        f"prioritized_pending: total={len(scored)} "
+        f"max_keep={args.max_keep} min_score={args.min_score:.4f}"
+    )
+    for row in scored:
+        status_rows = list_signal_queue(config.signal_queue_path, status=None)
+        latest = next(
+            (value for value in status_rows if value.get("signal_id") == row["signal_id"]),
+            None,
+        )
+        status = latest.get("status") if latest else "unknown"
+        print(
+            "signal_rank:"
+            f" id={row['signal_id']}"
+            f" symbol={row['symbol']}"
+            f" setup={row['setup_name']}"
+            f" score={row['rank_score']:.4f}"
+            f" trades={row['rank_trades']}"
+            f" avg_r={row['rank_avg_r']:.2f}"
+            f" win_rate={row['rank_win_rate']:.2f}"
+            f" status={status}"
+        )
+
+
+def handle_decision_quality(config: AppConfig, args: argparse.Namespace) -> None:
+    client = AlpacaClient(config)
+    rows = list_signal_queue(config.signal_queue_path, status=None)
+    cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=args.lookback_days)
+    decided = []
+    for row in rows:
+        if row.get("status") not in {"executed", "ignored"}:
+            continue
+        ts = pd.to_datetime(row.get("decision_ts"), utc=True, errors="coerce")
+        if pd.isna(ts) or ts < cutoff:
+            continue
+        decided.append(row)
+    if not decided:
+        print("No decided signals in lookback window.")
+        return
+
+    totals = {
+        "executed_good": 0,
+        "executed_bad": 0,
+        "ignored_good": 0,
+        "ignored_bad": 0,
+        "unresolved": 0,
+    }
+    for row in decided:
+        symbol = row.get("symbol", "").upper()
+        if not symbol:
+            continue
+        stop = _extract_stop_price(row.get("stop_loss_logic", ""))
+        if stop is None:
+            totals["unresolved"] += 1
+            continue
+        decision_ts = pd.to_datetime(row.get("decision_ts"), utc=True, errors="coerce")
+        if pd.isna(decision_ts):
+            totals["unresolved"] += 1
+            continue
+        start = decision_ts.date().isoformat()
+        end = pd.Timestamp.now(tz="UTC").date().isoformat()
+        bars = client.get_daily_bars(symbol, start=start, end=end)
+        if bars is None or bars.empty:
+            totals["unresolved"] += 1
+            continue
+        bars = bars.reset_index().sort_values("timestamp")
+        if bars.empty:
+            totals["unresolved"] += 1
+            continue
+        entry_price = float(bars.iloc[0]["close"])
+        risk = abs(entry_price - stop)
+        if risk <= 0:
+            totals["unresolved"] += 1
+            continue
+        target = entry_price + (2.0 * risk)
+        outcome = "unresolved"
+        for _, bar in bars.iterrows():
+            bar_low = float(bar["low"])
+            bar_high = float(bar["high"])
+            if bar_low <= stop:
+                outcome = "loss"
+                break
+            if bar_high >= target:
+                outcome = "win"
+                break
+        if row.get("status") == "executed":
+            if outcome == "win":
+                totals["executed_good"] += 1
+            elif outcome == "loss":
+                totals["executed_bad"] += 1
+            else:
+                totals["unresolved"] += 1
+        else:
+            if outcome == "loss":
+                totals["ignored_good"] += 1
+            elif outcome == "win":
+                totals["ignored_bad"] += 1
+            else:
+                totals["unresolved"] += 1
+    print(f"decision_quality_window_days: {args.lookback_days}")
+    for key, value in totals.items():
+        print(f"{key}: {value}")
+
+
+def handle_weekly_profile_compare(config: AppConfig, args: argparse.Namespace) -> None:
+    root = args.root
+    if not os.path.exists(root):
+        raise RuntimeError(f"run root not found: {root}")
+    cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=args.days)
+    run_dirs = [
+        name
+        for name in os.listdir(root)
+        if os.path.isdir(os.path.join(root, name))
+    ]
+    manifests = []
+    for run_id in sorted(run_dirs):
+        manifest_path = os.path.join(root, run_id, "manifest.json")
+        if not os.path.exists(manifest_path):
+            continue
+        run_ts = _parse_run_id_timestamp(run_id)
+        if run_ts and run_ts < cutoff.to_pydatetime():
+            continue
+        with open(manifest_path, "r", encoding="utf-8") as file:
+            manifests.append(json.load(file))
+    if not manifests:
+        print("No manifests in comparison window.")
+        return
+
+    def _avg(profile: str, key: str) -> float:
+        values = []
+        for manifest in manifests:
+            value = (
+                manifest.get("portfolio", {})
+                .get(profile, {})
+                .get(key)
+            )
+            if value is None:
+                continue
+            values.append(float(value))
+        if not values:
+            return 0.0
+        return sum(values) / len(values)
+
+    constrained_avg_r = _avg("constrained", "avg_r")
+    capacity3_avg_r = _avg("constrained_capacity3", "avg_r")
+    constrained_win = _avg("constrained", "win_rate")
+    capacity3_win = _avg("constrained_capacity3", "win_rate")
+    constrained_cum = _avg("constrained", "cum_r")
+    capacity3_cum = _avg("constrained_capacity3", "cum_r")
+
+    print(f"comparison_days: {args.days}")
+    print(f"runs: {len(manifests)}")
+    print(f"constrained_avg_r: {constrained_avg_r:.2f}")
+    print(f"capacity3_avg_r: {capacity3_avg_r:.2f}")
+    print(f"delta_avg_r: {capacity3_avg_r - constrained_avg_r:.2f}")
+    print(f"constrained_win_rate: {constrained_win:.2f}")
+    print(f"capacity3_win_rate: {capacity3_win:.2f}")
+    print(f"delta_win_rate: {capacity3_win - constrained_win:.2f}")
+    print(f"constrained_cum_r: {constrained_cum:.2f}")
+    print(f"capacity3_cum_r: {capacity3_cum:.2f}")
+    print(f"delta_cum_r: {capacity3_cum - constrained_cum:.2f}")
 
 
 def handle_backtest(config: AppConfig, args: argparse.Namespace) -> None:
@@ -2368,6 +3036,31 @@ def handle_ops_report(config: AppConfig, args: argparse.Namespace) -> None:
         time_stop_days=config.time_stop_days,
         time_stop_min_r=config.time_stop_min_r,
     )
+    momentum_due = _momentum_exit_due_trades(
+        client=client,
+        journal_path=config.journal_path,
+        min_r_multiple=1.0,
+    )
+    fetch_status = _load_last_fetch_status("data/server_runs_remote")
+    fetch_state = "unknown"
+    fetch_last_ts = ""
+    run_staleness_days = ""
+    warnings: list[str] = []
+    if fetch_status:
+        fetch_state = fetch_status.get("status", "unknown")
+        fetch_last_ts = fetch_status.get("timestamp_utc", "")
+        latest_run_id = fetch_status.get("latest_run_id", "")
+        run_ts = _parse_run_id_timestamp(latest_run_id)
+        if run_ts:
+            run_staleness_days = str((date_cls.today() - run_ts.date()).days)
+            if int(run_staleness_days) > config.run_stale_days:
+                warnings.append(
+                    f"run_stale_days={run_staleness_days} exceeds "
+                    f"threshold={config.run_stale_days}"
+                )
+        if fetch_state != "ok":
+            error = fetch_status.get("error", "")
+            warnings.append(f"fetch_status={fetch_state} error={error}".strip())
     pending_reviews = len(list_review_queue(config.review_queue_path))
     pending_signals = len(list_signal_queue(config.signal_queue_path, status="pending"))
     metrics = _go_live_metrics(
@@ -2397,13 +3090,45 @@ def handle_ops_report(config: AppConfig, args: argparse.Namespace) -> None:
         f"max_capital_usd: {config.max_capital_usd:.2f}",
         f"max_total_open_risk_usd: {config.max_total_open_risk_usd:.2f}",
         f"time_stop_due: {len(time_stop_due)}",
+        f"momentum_exit_due: {len(momentum_due)}",
         f"pending_reviews: {pending_reviews}",
         f"pending_signals: {pending_signals}",
+        f"fetch_status: {fetch_state}",
+        f"fetch_last_ts_utc: {fetch_last_ts}",
+        f"run_staleness_days: {run_staleness_days}",
         "",
         f"go_live_ready: {str(metrics['go_live_ready']).lower()}",
         f"economic_ready: {str(economics['economic_ready']).lower()}",
         f"projected_monthly_net_usd: {economics['projected_monthly_net_usd']:.2f}",
     ]
+    if time_stop_due:
+        lines.append("")
+        lines.append("time_stop_actions:")
+        for row in time_stop_due:
+            symbol = row.get("symbol")
+            if not symbol:
+                continue
+            lines.append(f"- {symbol}: {_time_stop_close_command(config, symbol)}")
+    if momentum_due:
+        lines.append("")
+        lines.append("momentum_exit_actions:")
+        for row in momentum_due:
+            symbol = row.get("symbol")
+            if not symbol:
+                continue
+            lines.append(
+                f"- {symbol}: CONFIG_PATH={config.config_path} "
+                f"uv run python main.py momentum-close --execute --symbol {symbol}"
+            )
+    if warnings:
+        lines.append("")
+        lines.append("warnings:")
+        for warning in warnings:
+            lines.append(f"- {warning}")
+        lines.append(
+            "- remediation: run "
+            "REMOTE=... REMOTE_ROOT=... ./scripts/home_server/fetch_runs.sh"
+        )
     with open(output_path, "w", encoding="utf-8") as file:
         file.write("\n".join(lines) + "\n")
     print(f"wrote_ops_report: {output_path}")
@@ -2634,6 +3359,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     run_parser = subparsers.add_parser("run-daily", help="Run once after market close")
+    run_parser.set_defaults(
+        auto_prioritize_pending=True,
+        auto_time_stop_close=True,
+        auto_momentum_close=True,
+    )
     run_parser.add_argument("--symbol", required=True, help="Symbol to evaluate")
     run_parser.add_argument(
         "--symbols",
@@ -2706,10 +3436,68 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional notes logged when no trade is taken",
     )
+    run_parser.add_argument(
+        "--auto-prioritize-pending",
+        action="store_true",
+        help="Auto-rank pending signals and keep only top candidates in propose mode",
+    )
+    run_parser.add_argument(
+        "--no-auto-prioritize-pending",
+        action="store_false",
+        dest="auto_prioritize_pending",
+        help="Disable auto pending-signal prioritization",
+    )
+    run_parser.add_argument(
+        "--max-pending-keep",
+        type=int,
+        default=1,
+        help="Max pending signals to keep after ranking",
+    )
+    run_parser.add_argument(
+        "--min-pending-score",
+        type=float,
+        default=0.0,
+        help="Minimum score required to keep a pending signal",
+    )
+    run_parser.add_argument(
+        "--pending-score-lookback-days",
+        type=int,
+        default=180,
+        help="Lookback days for pending signal score",
+    )
+    run_parser.add_argument(
+        "--auto-time-stop-close",
+        action="store_true",
+        help="Run time-stop close execute step after signal generation",
+    )
+    run_parser.add_argument(
+        "--no-auto-time-stop-close",
+        action="store_false",
+        dest="auto_time_stop_close",
+        help="Disable auto time-stop close step",
+    )
+    run_parser.add_argument(
+        "--auto-momentum-close",
+        action="store_true",
+        help="Run momentum-exit close execute step after signal generation",
+    )
+    run_parser.add_argument(
+        "--no-auto-momentum-close",
+        action="store_false",
+        dest="auto_momentum_close",
+        help="Disable auto momentum close step",
+    )
+    run_parser.add_argument(
+        "--momentum-min-r",
+        type=float,
+        default=1.0,
+        help="Minimum R before momentum-exit close is eligible",
+    )
 
     run_once_parser = subparsers.add_parser(
         "run-once", help="Run the evaluation immediately for one or more symbols"
     )
+    run_once_parser.set_defaults(auto_prioritize_pending=True)
     run_once_parser.add_argument("--symbol", required=True, help="Symbol to evaluate")
     run_once_parser.add_argument(
         "--symbols",
@@ -2754,6 +3542,35 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional notes logged when no trade is taken",
     )
+    run_once_parser.add_argument(
+        "--auto-prioritize-pending",
+        action="store_true",
+        help="Auto-rank pending signals and keep only top candidates in propose mode",
+    )
+    run_once_parser.add_argument(
+        "--no-auto-prioritize-pending",
+        action="store_false",
+        dest="auto_prioritize_pending",
+        help="Disable auto pending-signal prioritization",
+    )
+    run_once_parser.add_argument(
+        "--max-pending-keep",
+        type=int,
+        default=1,
+        help="Max pending signals to keep after ranking",
+    )
+    run_once_parser.add_argument(
+        "--min-pending-score",
+        type=float,
+        default=0.0,
+        help="Minimum score required to keep a pending signal",
+    )
+    run_once_parser.add_argument(
+        "--pending-score-lookback-days",
+        type=int,
+        default=180,
+        help="Lookback days for pending signal score",
+    )
 
     run_sync_parser = subparsers.add_parser(
         "run-sync", help="Continuously sync exit fields from Alpaca"
@@ -2795,6 +3612,131 @@ def build_parser() -> argparse.ArgumentParser:
         "--improvement-idea",
         required=True,
         help="One concrete improvement idea",
+    )
+
+    time_stop_close_parser = subparsers.add_parser(
+        "time-stop-close",
+        help="Close positions that hit the time-stop rule",
+    )
+    time_stop_close_parser.add_argument(
+        "--date",
+        default=None,
+        help="Anchor date (YYYY-MM-DD or ISO datetime). Defaults to today.",
+    )
+    time_stop_close_parser.add_argument(
+        "--symbol",
+        default=None,
+        help="Close only this symbol (if time-stop due).",
+    )
+    time_stop_close_parser.add_argument(
+        "--symbols",
+        default=None,
+        help="Comma-separated symbols to close (if time-stop due).",
+    )
+    time_stop_close_parser.add_argument(
+        "--time-stop-days",
+        type=int,
+        default=None,
+        help="Override time-stop days (default: config).",
+    )
+    time_stop_close_parser.add_argument(
+        "--time-stop-min-r",
+        type=float,
+        default=None,
+        help="Override time-stop min R (default: config).",
+    )
+    time_stop_close_parser.add_argument(
+        "--wait-seconds",
+        type=int,
+        default=10,
+        help="Seconds to wait for fill before deferring review",
+    )
+    time_stop_close_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Submit closes (otherwise dry run)",
+    )
+
+    momentum_close_parser = subparsers.add_parser(
+        "momentum-close",
+        help="Close positions at +R when daily momentum weakens",
+    )
+    momentum_close_parser.add_argument(
+        "--min-r-multiple",
+        type=float,
+        default=1.0,
+        help="Minimum R before momentum-exit is eligible",
+    )
+    momentum_close_parser.add_argument(
+        "--symbol",
+        default=None,
+        help="Close only this symbol (if momentum-exit due).",
+    )
+    momentum_close_parser.add_argument(
+        "--symbols",
+        default=None,
+        help="Comma-separated symbols to close (if momentum-exit due).",
+    )
+    momentum_close_parser.add_argument(
+        "--wait-seconds",
+        type=int,
+        default=10,
+        help="Seconds to wait for fill before deferring review",
+    )
+    momentum_close_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Submit closes (otherwise dry run)",
+    )
+
+    prioritize_pending_parser = subparsers.add_parser(
+        "prioritize-pending",
+        help="Rank pending signals and auto-ignore low-ranked entries",
+    )
+    prioritize_pending_parser.add_argument(
+        "--max-keep",
+        type=int,
+        default=1,
+        help="Max pending signals to keep",
+    )
+    prioritize_pending_parser.add_argument(
+        "--min-score",
+        type=float,
+        default=0.0,
+        help="Minimum score required to keep pending",
+    )
+    prioritize_pending_parser.add_argument(
+        "--lookback-days",
+        type=int,
+        default=180,
+        help="Lookback days used for score computation",
+    )
+
+    decision_quality_parser = subparsers.add_parser(
+        "decision-quality",
+        help="Evaluate approve/ignore decisions versus simple forward outcomes",
+    )
+    decision_quality_parser.add_argument(
+        "--lookback-days",
+        type=int,
+        default=30,
+        help="Lookback days for decided signals",
+    )
+
+    weekly_profile_compare_parser = subparsers.add_parser(
+        "weekly-profile-compare",
+        help="Compare constrained vs capacity3 profile averages over recent runs",
+    )
+    weekly_profile_compare_parser.add_argument(
+        "--root",
+        default="data/server_runs_remote",
+        help="Server runs root directory",
+    )
+    weekly_profile_compare_parser.add_argument(
+        "--days",
+        type=int,
+        default=7,
+        help="Comparison window in days",
     )
 
     signal_queue_parser = subparsers.add_parser(
@@ -3627,6 +4569,16 @@ def main() -> None:
         handle_ignore_signal(config, args)
     elif args.command == "close-position":
         handle_close_position(config, args)
+    elif args.command == "time-stop-close":
+        handle_time_stop_close(config, args)
+    elif args.command == "momentum-close":
+        handle_momentum_close(config, args)
+    elif args.command == "prioritize-pending":
+        handle_prioritize_pending(config, args)
+    elif args.command == "decision-quality":
+        handle_decision_quality(config, args)
+    elif args.command == "weekly-profile-compare":
+        handle_weekly_profile_compare(config, args)
     elif args.command == "backtest":
         handle_backtest(config, args)
     elif args.command == "backtest-summary":

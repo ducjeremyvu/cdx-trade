@@ -7,8 +7,13 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=/home/<user>/cdx-trade
 ExecStart=/home/<user>/cdx-trade/scripts/home_server/run_nightly.sh
+Environment=CONFIG_PATH=configs/etf_core_1k.json
 Environment=KEEP_DAYS=30
 Environment=KEEP_MAX_RUNS=120
+Environment=MAX_PENDING_KEEP=1
+Environment=MIN_PENDING_SCORE=0.00
+Environment=PENDING_SCORE_LOOKBACK_DAYS=180
+EnvironmentFile=-/home/<user>/cdx-trade/.env
 
 [Install]
 WantedBy=multi-user.target

@@ -41,3 +41,6 @@ f57491e7-c101-4fe3-ad76-e433d288a8a7,XME,2026-02-27T17:02:53.999376+00:00,No val
 948aec35-a50b-4f33-96e9-3a4fbf5c5131,EEM,2026-02-27T17:02:55.404798+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): trades 12 < 15
 65ecfc81-3256-4119-8a09-2c81d46f1b04,IEMG,2026-02-27T17:02:56.377381+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): trades 12 < 15
 bef4b69c-e9f4-49d5-a639-6a1b891bda4e,SMH,2026-02-27T17:02:58.715350+00:00,No valid setup,unclear,calm,
+1e3b4403-1430-4b2c-81fb-a0322f5c1dcd,QQQ,2026-03-08T12:39:55.254887+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): avg_r 0.02 < 0.10
+78f527d0-7c1f-4747-92ca-7ce45b829ea5,IWD,2026-03-08T12:39:58.131705+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): win_rate 0.47 < 0.48
+c6f20ec2-5f7c-4756-a3ac-3c301fc22352,VTV,2026-03-08T12:39:59.576315+00:00,Backtest gate failed,unclear,calm,Backtest gate failed (90d): trades 14 < 15
